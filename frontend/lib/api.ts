@@ -292,11 +292,15 @@ export async function updateOverview(
 // ─── Settings ────────────────────────────────────────────────────────────────
 
 export interface AppSettings {
-  llm_provider: "openai_key" | "none";
+  llm_provider: "openclaw" | "openai_key" | "none";
   openai_base_url: string;
   openai_api_key: string;
   openai_model: string;
   llm_analyze_prompt: string;
+  // OpenClaw proxy
+  openclaw_proxy_url: string;
+  openclaw_summary_agent: string;
+  openclaw_chat_agent: string;
   qdrant_enabled: boolean;
   qdrant_url: string;
   qdrant_api_key: string;

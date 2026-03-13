@@ -10,7 +10,7 @@ Self-hosted audio intelligence. Upload audio, get transcripts with speaker ident
 - **Speaker Diarization** — pyannote 3.1 identifies who spoke when
 - **Speaker Recognition** — ECAPA-TDNN voice fingerprinting. Name a speaker once, recognized forever
 - **Emotion Detection** — emotion2vec+ detects sentiment per segment
-- **AI Summaries** — Auto-generate titles, summaries, action items, and outlines via any OpenAI-compatible API
+- **AI Summaries** — Auto-generate titles, summaries, action items, and outlines via any OpenAI-compatible API or [OpenClaw](https://github.com/anthropics/openclaw) agents
 - **Semantic Search** — Optional Qdrant integration for searching across all transcripts
 - **File Watcher** — Drop audio files in a folder, auto-processed
 - **Speaker Verification** — Lightweight endpoint for identifying speakers without full pipeline
@@ -45,7 +45,8 @@ Models are baked into the Docker images — no downloads needed. First startup p
 
 The only optional setup:
 1. **LLM for summaries** — Go to Settings, add an OpenAI API key (or any compatible endpoint like Ollama)
-2. **Qdrant for search** — Enable in Settings if you have a Qdrant instance
+2. **OpenClaw agents** — For multi-agent chat, enable the OpenClaw proxy sidecar (see below)
+3. **Qdrant for search** — Enable in Settings if you have a Qdrant instance
 
 ## Architecture
 
@@ -85,6 +86,19 @@ All config is in `.env` or the Settings page in the UI. Key options:
 | `WHISPER_COMPUTE_TYPE` | `float16` | `float16` for GPU, `int8` for CPU |
 | `WHISPER_BATCH_SIZE` | `16` | Lower for less VRAM usage |
 | `SPEAKER_MATCH_THRESHOLD` | `0.3` | Speaker matching strictness (lower = stricter) |
+
+## OpenClaw Integration (Optional)
+
+[OpenClaw](https://github.com/anthropics/openclaw) users can connect their agents for summarization and chat. Start the proxy sidecar:
+
+```bash
+# Add --profile openclaw to enable the proxy container
+docker compose --profile openclaw up -d
+```
+
+Then go to Settings > LLM Provider > OpenClaw Proxy and configure your agent IDs.
+
+The proxy reads your `~/.openclaw/openclaw.json` config and makes your agents available to VoiceStack3 for transcript analysis and chat.
 
 ## CPU Mode
 

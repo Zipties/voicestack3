@@ -19,6 +19,7 @@ import {
   Eye,
   Play,
   RefreshCw,
+  Plug,
 } from "lucide-react";
 import {
   fetchSettings,
@@ -92,6 +93,10 @@ export default function SettingsPage() {
     if (v) { _setPipeAlignment(true); _setPipeDiarization(true); }
   };
 
+  const [openclawProxyUrl, setOpenclawProxyUrl] = useState("http://localhost:8100");
+  const [openclawSummaryAgent, setOpenclawSummaryAgent] = useState("");
+  const [openclawChatAgent, setOpenclawChatAgent] = useState("");
+
   const [watcherEnabled, setWatcherEnabled] = useState(false);
   const [watcherPath, setWatcherPath] = useState("");
   const [watcherExtensions, setWatcherExtensions] = useState(".m4a,.mp3,.wav,.ogg,.flac,.opus,.mp4,.webm");
@@ -119,6 +124,9 @@ export default function SettingsPage() {
         setPipeEmotion(s.pipeline_emotion ?? true);
         setPipeSpeakers(s.pipeline_speaker_matching ?? true);
         setAutoSummary(s.auto_summary ?? "off");
+        setOpenclawProxyUrl(s.openclaw_proxy_url || "http://localhost:8100");
+        setOpenclawSummaryAgent(s.openclaw_summary_agent || "");
+        setOpenclawChatAgent(s.openclaw_chat_agent || "");
         setWatcherEnabled(s.file_watcher_enabled ?? false);
         setWatcherPath(s.file_watcher_path || "");
         setWatcherExtensions(s.file_watcher_extensions || ".m4a,.mp3,.wav,.ogg,.flac,.opus,.mp4,.webm");
@@ -167,6 +175,9 @@ export default function SettingsPage() {
         pipeline_emotion: pipeEmotion,
         pipeline_speaker_matching: pipeSpeakers,
         auto_summary: autoSummary,
+        openclaw_proxy_url: openclawProxyUrl,
+        openclaw_summary_agent: openclawSummaryAgent,
+        openclaw_chat_agent: openclawChatAgent,
         qdrant_enabled: qdrantEnabled,
         qdrant_url: qdrantUrl,
         qdrant_collection: qdrantCollection,
@@ -368,6 +379,71 @@ export default function SettingsPage() {
                       {availableModels.length > 0
                         ? `${availableModels.length} models available`
                         : "Save your API key first, then click refresh to load models"}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </label>
+
+          {/* OpenClaw Proxy */}
+          <label className="flex items-start gap-3 p-3 rounded-lg border border-vs-border hover:border-vs-border-bright cursor-pointer transition-colors">
+            <input
+              type="radio"
+              name="llm_provider"
+              value="openclaw"
+              checked={provider === "openclaw"}
+              onChange={() => setProvider("openclaw")}
+              className="mt-1 accent-vs-text-accent"
+            />
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <Plug className="w-4 h-4 text-purple-400" />
+                <span className="font-medium">OpenClaw Proxy</span>
+              </div>
+              <p className="text-sm text-vs-text-muted mt-1">
+                Connect to an OpenClaw gateway for multi-agent chat and summarization.
+                Requires the openclaw-proxy sidecar container.
+              </p>
+              {provider === "openclaw" && (
+                <div className="mt-3 space-y-3">
+                  <div>
+                    <label className="block text-sm text-vs-text-secondary mb-1">Proxy URL</label>
+                    <input
+                      type="text"
+                      value={openclawProxyUrl}
+                      onChange={(e) => setOpenclawProxyUrl(e.target.value)}
+                      className="input w-full"
+                      placeholder="http://localhost:8100"
+                    />
+                    <p className="text-xs text-vs-text-muted mt-1">
+                      URL of the openclaw-proxy service
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-vs-text-secondary mb-1">Summary Agent</label>
+                    <input
+                      type="text"
+                      value={openclawSummaryAgent}
+                      onChange={(e) => setOpenclawSummaryAgent(e.target.value)}
+                      className="input w-full"
+                      placeholder="e.g. summarizer"
+                    />
+                    <p className="text-xs text-vs-text-muted mt-1">
+                      Agent ID used for auto-generating titles, summaries, and tags
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-vs-text-secondary mb-1">Chat Agent</label>
+                    <input
+                      type="text"
+                      value={openclawChatAgent}
+                      onChange={(e) => setOpenclawChatAgent(e.target.value)}
+                      className="input w-full"
+                      placeholder="e.g. assistant"
+                    />
+                    <p className="text-xs text-vs-text-muted mt-1">
+                      Default agent for the chat sidebar (can switch between agents in chat)
                     </p>
                   </div>
                 </div>

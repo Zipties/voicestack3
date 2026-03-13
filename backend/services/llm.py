@@ -1,7 +1,11 @@
 import json
+import os
 import httpx
 
 from services.settings import get_settings, get_openai_token
+
+OPENCLAW_PROXY_URL = os.getenv("OPENCLAW_PROXY_URL", "http://localhost:8100")
+OPENCLAW_TIMEOUT = int(os.getenv("OPENCLAW_TIMEOUT", "120"))
 
 _SYSTEM_PROMPT = """\
 You are a transcript analysis assistant. You analyze audio transcripts and return structured JSON metadata. You must identify the correct content type and match your analysis style to the actual content — never force a transcript into an ill-fitting category. If there are no action items, return an empty array. If the content is entertainment or comedy, analyze it as such."""
@@ -47,6 +51,32 @@ def _get_analyze_prompt() -> str:
     settings = get_settings()
     custom = settings.get("llm_analyze_prompt", "")
     return custom if custom.strip() else DEFAULT_ANALYZE_PROMPT
+
+
+async def _call_openclaw(message: str, agent: str = "") -> str:
+    """Call the OpenClaw proxy and return the response text."""
+    settings = get_settings()
+    proxy_url = settings.get("openclaw_proxy_url", OPENCLAW_PROXY_URL)
+    agent_id = agent or settings.get("openclaw_summary_agent", "")
+
+    if not agent_id:
+        raise RuntimeError("No OpenClaw agent configured for summarization. Set it in Settings.")
+
+    async with httpx.AsyncClient(timeout=180.0) as client:
+        resp = await client.post(
+            f"{proxy_url}/agent",
+            json={
+                "agent": agent_id,
+                "message": message,
+                "timeout": OPENCLAW_TIMEOUT,
+            },
+        )
+
+    if resp.status_code != 200:
+        error = resp.json().get("error", resp.text[:500])
+        raise RuntimeError(f"OpenClaw proxy error ({resp.status_code}): {error}")
+
+    return resp.json()["text"]
 
 
 async def _call_openai_compatible(message: str, base_url: str, token: str, model: str) -> str:
@@ -108,7 +138,7 @@ def _parse_llm_response(payload_text: str) -> dict:
 async def generate_overview(raw_text: str, recorded_at: str | None = None) -> dict:
     """Generate title, summary, tags, action items, and outline via configured LLM.
 
-    Supports providers: openai_key, none.
+    Supports providers: openclaw, openai_key, none.
     Returns dict with keys: title, summary, tags, action_items, outline.
     """
     settings = get_settings()
@@ -129,7 +159,9 @@ async def generate_overview(raw_text: str, recorded_at: str | None = None) -> di
     date_line = f"\nRecording date: {recorded_at}\n" if recorded_at else "\n"
     message = f"{analyze_prompt}{date_line}\nTranscript:\n{truncated}"
 
-    if provider == "openai_key":
+    if provider == "openclaw":
+        payload_text = await _call_openclaw(message)
+    elif provider == "openai_key":
         token = await get_openai_token()
         if not token:
             raise RuntimeError("No API token configured")

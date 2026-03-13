@@ -76,6 +76,27 @@ jobs:
             ${{ env.IMAGE_PREFIX }}-worker:latest
             ${{ env.IMAGE_PREFIX }}-worker:${{ github.ref_name }}
 
+  build-proxy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./proxy
+          file: ./proxy/Containerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-proxy:latest
+            ${{ env.IMAGE_PREFIX }}-proxy:${{ github.ref_name }}
+
   build-worker-cpu:
     runs-on: ubuntu-latest
     permissions:

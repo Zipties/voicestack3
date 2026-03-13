@@ -46,6 +46,7 @@ services:
       QDRANT_URL: ${QDRANT_URL:-}
       EMBED_URL: ${EMBED_URL:-}
       EMBED_API_KEY: ${EMBED_API_KEY:-}
+      OPENCLAW_PROXY_URL: ${OPENCLAW_PROXY_URL:-http://openclaw-proxy:8100}
     volumes:
       - data:/data
     depends_on:
@@ -84,6 +85,17 @@ services:
       - "3000:3000"
     depends_on:
       - backend
+
+  openclaw-proxy:
+    image: ghcr.io/zipties/voicestack3-proxy:latest
+    restart: always
+    environment:
+      PROXY_PORT: "8100"
+      HOME: ${HOME}
+    volumes:
+      - ${HOME}/.openclaw:${HOME}/.openclaw:ro
+    profiles:
+      - openclaw
 
 volumes:
   db_data:

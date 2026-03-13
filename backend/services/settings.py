@@ -41,6 +41,10 @@ DEFAULTS = {
     "pipeline_speaker_matching": True,
     # Auto-summary: "off", "all", "known_speakers_only"
     "auto_summary": "off",
+    # OpenClaw proxy
+    "openclaw_proxy_url": "http://localhost:8100",
+    "openclaw_summary_agent": "",
+    "openclaw_chat_agent": "",
 }
 
 

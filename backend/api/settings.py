@@ -1,5 +1,6 @@
 """Settings API endpoints."""
 
+import os
 import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -62,6 +63,10 @@ class SettingsUpdate(BaseModel):
     pipeline_speaker_matching: bool | None = None
     # Auto-summary
     auto_summary: str | None = None
+    # OpenClaw proxy
+    openclaw_proxy_url: str | None = None
+    openclaw_summary_agent: str | None = None
+    openclaw_chat_agent: str | None = None
 
 
 @router.put("")
@@ -95,6 +100,18 @@ async def test_llm_connection():
 
     if provider == "none":
         return {"status": "error", "message": "LLM provider is disabled"}
+
+    if provider == "openclaw":
+        proxy_url = settings.get("openclaw_proxy_url", os.getenv("OPENCLAW_PROXY_URL", "http://localhost:8100"))
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(f"{proxy_url}/agents")
+            if resp.status_code == 200:
+                agents = resp.json()
+                return {"status": "ok", "message": f"OpenClaw proxy connected ({len(agents)} agents)"}
+            return {"status": "error", "message": f"Proxy returned {resp.status_code}"}
+        except Exception as e:
+            return {"status": "error", "message": f"Cannot reach OpenClaw proxy: {e}"}
 
     if provider == "openai_key":
         try:
@@ -134,6 +151,9 @@ async def list_models():
 
     if provider == "none":
         return {"models": []}
+
+    if provider == "openclaw":
+        return {"models": []}  # OpenClaw manages its own models
 
     # For openai_key, query the /models endpoint
     if provider != "openai_key":

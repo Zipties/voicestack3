@@ -44,6 +44,7 @@ services:
       QDRANT_URL: ${QDRANT_URL:-}
       EMBED_URL: ${EMBED_URL:-}
       EMBED_API_KEY: ${EMBED_API_KEY:-}
+      OPENCLAW_PROXY_URL: ${OPENCLAW_PROXY_URL:-http://openclaw-proxy:8100}
     volumes:
       - ./backend:/app
       - ./data:/data
@@ -103,6 +104,20 @@ services:
       - backend
     command: npm run dev
 
+
+  openclaw-proxy:
+    build:
+      context: ./proxy
+      dockerfile: Containerfile
+    restart: always
+    network_mode: host
+    environment:
+      PROXY_PORT: "8100"
+      HOME: ${HOME}
+    volumes:
+      - ${HOME}/.openclaw:${HOME}/.openclaw:rw
+    profiles:
+      - openclaw
 
 volumes:
   db_data:
