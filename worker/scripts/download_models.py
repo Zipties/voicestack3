@@ -62,7 +62,7 @@ def main():
     # ── emotion2vec+ large (ModelScope) ─────────────────────────────────────
     print("==> Downloading emotion2vec+ large (iic/emotion2vec_plus_large)...")
     from funasr import AutoModel
-    AutoModel(model="iic/emotion2vec_plus_large", model_revision="v2.0.4", hub="ms")
+    AutoModel(model="iic/emotion2vec_plus_large", model_revision="v2.0.5", hub="ms")
     print("    done.")
 
     print("\nAll models downloaded successfully.")
