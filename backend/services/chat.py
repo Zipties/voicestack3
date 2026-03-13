@@ -5,7 +5,7 @@ import httpx
 
 from services.settings import get_settings, get_openai_token
 
-OPENCLAW_PROXY_URL = os.getenv("OPENCLAW_PROXY_URL", "http://localhost:8100")
+OPENCLAW_PROXY_URL = os.getenv("OPENCLAW_PROXY_URL", "http://openclaw-proxy:8100")
 
 
 async def chat_with_agent(
@@ -25,7 +25,7 @@ async def chat_with_agent(
         session_id = str(uuid.uuid4())
 
     if provider == "openclaw":
-        proxy_url = settings.get("openclaw_proxy_url", OPENCLAW_PROXY_URL)
+        proxy_url = OPENCLAW_PROXY_URL
         chat_agent = agent_id or settings.get("openclaw_chat_agent", "")
         if not chat_agent:
             raise RuntimeError("No OpenClaw chat agent configured. Set it in Settings.")
@@ -101,7 +101,7 @@ async def list_agents() -> list[dict]:
     if settings.get("llm_provider") != "openclaw":
         return []
 
-    proxy_url = settings.get("openclaw_proxy_url", OPENCLAW_PROXY_URL)
+    proxy_url = OPENCLAW_PROXY_URL
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(f"{proxy_url}/agents")

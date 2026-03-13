@@ -4,7 +4,7 @@ import httpx
 
 from services.settings import get_settings, get_openai_token
 
-OPENCLAW_PROXY_URL = os.getenv("OPENCLAW_PROXY_URL", "http://localhost:8100")
+OPENCLAW_PROXY_URL = os.getenv("OPENCLAW_PROXY_URL", "http://openclaw-proxy:8100")
 OPENCLAW_TIMEOUT = int(os.getenv("OPENCLAW_TIMEOUT", "120"))
 
 _SYSTEM_PROMPT = """\
@@ -56,7 +56,7 @@ def _get_analyze_prompt() -> str:
 async def _call_openclaw(message: str, agent: str = "") -> str:
     """Call the OpenClaw proxy and return the response text."""
     settings = get_settings()
-    proxy_url = settings.get("openclaw_proxy_url", OPENCLAW_PROXY_URL)
+    proxy_url = OPENCLAW_PROXY_URL
     agent_id = agent or settings.get("openclaw_summary_agent", "")
 
     if not agent_id:

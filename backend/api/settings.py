@@ -22,6 +22,7 @@ SECRET_KEYS = {
     "openai_oauth_refresh",
     "qdrant_api_key",
     "embed_api_key",
+    "openclaw_gateway_token",
 }
 
 
@@ -63,8 +64,9 @@ class SettingsUpdate(BaseModel):
     pipeline_speaker_matching: bool | None = None
     # Auto-summary
     auto_summary: str | None = None
-    # OpenClaw proxy
-    openclaw_proxy_url: str | None = None
+    # OpenClaw
+    openclaw_gateway_url: str | None = None
+    openclaw_gateway_token: str | None = None
     openclaw_summary_agent: str | None = None
     openclaw_chat_agent: str | None = None
 
@@ -102,7 +104,7 @@ async def test_llm_connection():
         return {"status": "error", "message": "LLM provider is disabled"}
 
     if provider == "openclaw":
-        proxy_url = settings.get("openclaw_proxy_url", os.getenv("OPENCLAW_PROXY_URL", "http://localhost:8100"))
+        proxy_url = os.getenv("OPENCLAW_PROXY_URL", "http://openclaw-proxy:8100")
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(f"{proxy_url}/agents")

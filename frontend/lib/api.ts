@@ -298,7 +298,8 @@ export interface AppSettings {
   openai_model: string;
   llm_analyze_prompt: string;
   // OpenClaw proxy
-  openclaw_proxy_url: string;
+  openclaw_gateway_url: string;
+  openclaw_gateway_token: string;
   openclaw_summary_agent: string;
   openclaw_chat_agent: string;
   qdrant_enabled: boolean;

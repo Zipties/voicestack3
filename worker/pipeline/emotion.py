@@ -43,7 +43,7 @@ def detect_emotions(audio_path: str, segments: list, job_id: str) -> list[dict]:
     model = AutoModel(
         model="iic/emotion2vec_plus_large",
         device=device,
-        hub="hf",
+        hub="ms",
     )
 
     # Load full audio once

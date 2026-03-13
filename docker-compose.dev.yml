@@ -110,12 +110,16 @@ services:
       context: ./proxy
       dockerfile: Containerfile
     restart: always
-    network_mode: host
     environment:
       PROXY_PORT: "8100"
-      HOME: ${HOME}
-    volumes:
-      - ${HOME}/.openclaw:${HOME}/.openclaw:rw
+      HOME: /openclaw
+      OPENCLAW_GATEWAY_URL: ${OPENCLAW_GATEWAY_URL:-}
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8100/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     profiles:
       - openclaw
 

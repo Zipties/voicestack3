@@ -10,7 +10,6 @@ import {
   Zap,
   Database,
   Brain,
-  Key,
   FileText,
   FolderOpen,
   ChevronDown,
@@ -19,7 +18,6 @@ import {
   Eye,
   Play,
   RefreshCw,
-  Plug,
 } from "lucide-react";
 import {
   fetchSettings,
@@ -93,7 +91,8 @@ export default function SettingsPage() {
     if (v) { _setPipeAlignment(true); _setPipeDiarization(true); }
   };
 
-  const [openclawProxyUrl, setOpenclawProxyUrl] = useState("http://localhost:8100");
+  const [openclawGatewayUrl, setOpenclawGatewayUrl] = useState("");
+  const [openclawGatewayToken, setOpenclawGatewayToken] = useState("");
   const [openclawSummaryAgent, setOpenclawSummaryAgent] = useState("");
   const [openclawChatAgent, setOpenclawChatAgent] = useState("");
 
@@ -124,7 +123,8 @@ export default function SettingsPage() {
         setPipeEmotion(s.pipeline_emotion ?? true);
         setPipeSpeakers(s.pipeline_speaker_matching ?? true);
         setAutoSummary(s.auto_summary ?? "off");
-        setOpenclawProxyUrl(s.openclaw_proxy_url || "http://localhost:8100");
+        setOpenclawGatewayUrl(s.openclaw_gateway_url || "");
+        setOpenclawGatewayToken(s.openclaw_gateway_token || "");
         setOpenclawSummaryAgent(s.openclaw_summary_agent || "");
         setOpenclawChatAgent(s.openclaw_chat_agent || "");
         setWatcherEnabled(s.file_watcher_enabled ?? false);
@@ -175,7 +175,8 @@ export default function SettingsPage() {
         pipeline_emotion: pipeEmotion,
         pipeline_speaker_matching: pipeSpeakers,
         auto_summary: autoSummary,
-        openclaw_proxy_url: openclawProxyUrl,
+        openclaw_gateway_url: openclawGatewayUrl,
+        openclaw_gateway_token: openclawGatewayToken,
         openclaw_summary_agent: openclawSummaryAgent,
         openclaw_chat_agent: openclawChatAgent,
         qdrant_enabled: qdrantEnabled,
@@ -306,7 +307,10 @@ export default function SettingsPage() {
             />
             <div className="flex-1">
               <div className="flex items-center gap-2">
-                <Key className="w-4 h-4 text-amber-400" />
+                <svg className="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="currentColor">
+                  {/* ChatGPT-style robot face */}
+                  <path d="M12 2a8 8 0 0 0-8 8v1a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h1a7 7 0 0 0 14 0h1a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2v-1a8 8 0 0 0-8-8Zm-3 9.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Zm6 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Zm-6.5 5.5a4.5 4.5 0 0 0 9 0" fillRule="evenodd"/>
+                </svg>
                 <span className="font-medium">OpenAI-Compatible API Key</span>
               </div>
               <p className="text-sm text-vs-text-muted mt-1">
@@ -398,7 +402,13 @@ export default function SettingsPage() {
             />
             <div className="flex-1">
               <div className="flex items-center gap-2">
-                <Plug className="w-4 h-4 text-purple-400" />
+                <svg className="w-4 h-4 text-purple-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  {/* Lobster claw icon for OpenClaw */}
+                  <path d="M9 2C6 2 4 5 4 8c0 2 1 3.5 2.5 4.5L4 17l2 2 3-3c.5.2 1 .3 1.5.3" />
+                  <path d="M15 2c3 0 5 3 5 6 0 2-1 3.5-2.5 4.5L20 17l-2 2-3-3c-.5.2-1 .3-1.5.3" />
+                  <path d="M12 13v8" />
+                  <circle cx="12" cy="22" r="1" fill="currentColor" />
+                </svg>
                 <span className="font-medium">OpenClaw Proxy</span>
               </div>
               <p className="text-sm text-vs-text-muted mt-1">
@@ -408,16 +418,29 @@ export default function SettingsPage() {
               {provider === "openclaw" && (
                 <div className="mt-3 space-y-3">
                   <div>
-                    <label className="block text-sm text-vs-text-secondary mb-1">Proxy URL</label>
+                    <label className="block text-sm text-vs-text-secondary mb-1">Gateway URL</label>
                     <input
                       type="text"
-                      value={openclawProxyUrl}
-                      onChange={(e) => setOpenclawProxyUrl(e.target.value)}
+                      value={openclawGatewayUrl}
+                      onChange={(e) => setOpenclawGatewayUrl(e.target.value)}
                       className="input w-full"
-                      placeholder="http://localhost:8100"
+                      placeholder="wss://your-gateway.example.com"
                     />
                     <p className="text-xs text-vs-text-muted mt-1">
-                      URL of the openclaw-proxy service
+                      Your OpenClaw gateway WebSocket URL (from <code>openclaw wizard</code>)
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-vs-text-secondary mb-1">Gateway Token</label>
+                    <input
+                      type="password"
+                      value={openclawGatewayToken}
+                      onChange={(e) => setOpenclawGatewayToken(e.target.value)}
+                      className="input w-full"
+                      placeholder="Your gateway authentication token"
+                    />
+                    <p className="text-xs text-vs-text-muted mt-1">
+                      Authentication token for your gateway connection
                     </p>
                   </div>
                   <div>

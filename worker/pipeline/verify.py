@@ -60,7 +60,8 @@ def verify_speakers(audio_path: str, min_duration: float = 2.0,
 
         # ── Step 1: Pyannote Diarization ──
         hf_token = os.getenv("HF_TOKEN", "")
-        if not hf_token:
+        hf_offline = os.getenv("HF_HUB_OFFLINE", "0") == "1"
+        if not hf_token and not hf_offline:
             raise RuntimeError("HF_TOKEN required for speaker diarization (pyannote)")
 
         print("[verify] Loading pyannote diarization pipeline...", flush=True)
@@ -70,7 +71,7 @@ def verify_speakers(audio_path: str, min_duration: float = 2.0,
 
         diarization_pipeline = PyannotePipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
-            use_auth_token=hf_token,
+            use_auth_token=hf_token or True,
             cache_dir=os.getenv("PYANNOTE_CACHE_DIR", "/app/model_cache/pyannote"),
         )
         # pyannote supports CUDA and MPS

@@ -87,13 +87,14 @@ def align_and_diarize(
 
     # Step 2: Speaker diarization
     if do_diarize:
-        if not hf_token:
+        hf_offline = os.getenv("HF_HUB_OFFLINE", "0") == "1"
+        if not hf_token and not hf_offline:
             raise RuntimeError("HF_TOKEN required for speaker diarization (pyannote)")
 
         print("[WhisperX] Loading diarization pipeline...", flush=True)
         from whisperx.diarize import DiarizationPipeline
         diarize_model = DiarizationPipeline(
-            use_auth_token=hf_token,
+            use_auth_token=hf_token or True,
             device=device,
         )
         diarize_segments = diarize_model(audio)
@@ -137,8 +138,9 @@ def transcribe(audio_path: str, job_id: str) -> dict:
     language = os.getenv("WHISPER_LANGUAGE", "en")
     initial_prompt = os.getenv("WHISPER_INITIAL_PROMPT", "")
     hf_token = os.getenv("HF_TOKEN")
+    hf_offline = os.getenv("HF_HUB_OFFLINE", "0") == "1"
 
-    if not hf_token:
+    if not hf_token and not hf_offline:
         raise RuntimeError("HF_TOKEN required for speaker diarization (pyannote)")
 
     print(f"[WhisperX] Loading model: {model_name} ({compute_type}) on {device}")
@@ -194,7 +196,7 @@ def transcribe(audio_path: str, job_id: str) -> dict:
     print(f"[WhisperX] Loading diarization pipeline on {diarize_device}...")
     from whisperx.diarize import DiarizationPipeline
     diarize_model = DiarizationPipeline(
-        token=hf_token,
+        token=hf_token or True,
         device=diarize_device,
     )
     diarize_segments = diarize_model(audio)

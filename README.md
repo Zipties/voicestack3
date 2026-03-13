@@ -6,7 +6,7 @@ Self-hosted audio intelligence. Upload audio, get transcripts with speaker ident
 
 ## Features
 
-- **Transcription** — WhisperX large-v2 with word-level timestamps
+- **Transcription** — WhisperX large-v3 with word-level timestamps
 - **Speaker Diarization** — pyannote 3.1 identifies who spoke when
 - **Speaker Recognition** — ECAPA-TDNN voice fingerprinting. Name a speaker once, recognized forever
 - **Emotion Detection** — emotion2vec+ detects sentiment per segment
@@ -20,39 +20,66 @@ Self-hosted audio intelligence. Upload audio, get transcripts with speaker ident
 ### Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) or [Podman](https://podman.io/)
-- NVIDIA GPU with [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) (recommended, CPU mode also works)
 
-### Run
+That's it. All ML models are bundled in the Docker images.
+
+### macOS (Apple Silicon or Intel)
 
 ```bash
 git clone https://github.com/Zipties/voicestack3.git
 cd voicestack3
-cp .env.example .env    # Edit if needed
-docker compose up -d    # or: podman compose up -d
+cp .env.example .env
+docker compose up -d
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
+The default `.env.example` is pre-configured for CPU mode. Open [http://localhost:3000](http://localhost:3000).
 
-For NVIDIA GPU acceleration:
+Processing speed: ~2-3x audio length (a 5 min recording takes ~10-15 min).
 
+### Linux with NVIDIA GPU
+
+```bash
+git clone https://github.com/Zipties/voicestack3.git
+cd voicestack3
+cp .env.example .env
+```
+
+Edit `.env`:
+```bash
+WORKER_TAG=latest
+WHISPER_COMPUTE_TYPE=float16
+```
+
+Then:
 ```bash
 docker compose -f docker-compose.yml -f compose.gpu.yml up -d
 ```
 
+Requires [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html). Processing speed: faster-than-realtime on RTX 3060+.
+
+### Linux without GPU
+
+Same as macOS — use the defaults in `.env.example` (CPU mode).
+
 ### First Run
 
-Models are baked into the Docker images — no downloads needed. First startup pulls ~15GB of images (one time).
+First startup pulls images (~8GB for CPU, ~15GB for GPU). Models are pre-bundled — no HuggingFace account or manual downloads needed.
 
-The only optional setup:
-1. **LLM for summaries** — Go to Settings, add an OpenAI API key (or any compatible endpoint like Ollama)
-2. **OpenClaw agents** — For multi-agent chat, enable the OpenClaw proxy sidecar (see below)
-3. **Qdrant for search** — Enable in Settings if you have a Qdrant instance
+Upload an audio file and the pipeline runs automatically: transcription, alignment, diarization, emotion detection, speaker matching.
+
+### Optional Setup
+
+| Feature | How to Enable |
+|---------|--------------|
+| **AI Summaries** | Settings > LLM Provider > add OpenAI API key (or Ollama, LM Studio, etc.) |
+| **OpenClaw Agents** | Set `OPENCLAW_GATEWAY_URL` and `OPENCLAW_GATEWAY_TOKEN` in `.env`, run with `--profile openclaw` |
+| **Semantic Search** | Point `QDRANT_URL` and `EMBED_URL` at a Qdrant + embedding server |
 
 ## Architecture
 
 ```
 ┌──────────┐    ┌──────────┐    ┌──────────┐
-│ Frontend │───▶│ Backend  │───▶│  Worker  │
+│ Frontend │───>│ Backend  │───>│  Worker  │
 │ Next.js  │    │ FastAPI  │    │ WhisperX │
 │ :3000    │    │ :8000    │    │ GPU/CPU  │
 └──────────┘    └──────────┘    └──────────┘
@@ -66,7 +93,7 @@ The only optional setup:
 ### Pipeline Stages
 
 1. Audio normalization (ffmpeg → 16kHz mono WAV)
-2. Transcription (WhisperX large-v2)
+2. Transcription (WhisperX large-v3)
 3. Word alignment (wav2vec2)
 4. Speaker diarization (pyannote 3.1)
 5. Emotion detection (emotion2vec+ large)
@@ -77,39 +104,41 @@ The only optional setup:
 
 ## Configuration
 
-All config is in `.env` or the Settings page in the UI. Key options:
+All config via `.env` or the Settings page in the UI.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PLATFORM` | `cuda` | `cuda` for NVIDIA GPU, `cpu` for CPU-only |
-| `WHISPER_MODEL` | `large-v2` | WhisperX model size |
-| `WHISPER_COMPUTE_TYPE` | `float16` | `float16` for GPU, `int8` for CPU |
-| `WHISPER_BATCH_SIZE` | `16` | Lower for less VRAM usage |
-| `SPEAKER_MATCH_THRESHOLD` | `0.3` | Speaker matching strictness (lower = stricter) |
+| Variable | CPU Default | GPU Default | Description |
+|----------|-------------|-------------|-------------|
+| `WORKER_TAG` | `cpu` | `latest` | Docker image tag for the worker |
+| `WHISPER_MODEL` | `large-v3` | `large-v3` | WhisperX model |
+| `WHISPER_COMPUTE_TYPE` | `int8` | `float16` | Quantization (int8 for CPU, float16 for GPU) |
+| `WHISPER_BATCH_SIZE` | `16` | `16` | Lower = less memory usage |
+| `SPEAKER_MATCH_THRESHOLD` | `0.45` | `0.45` | Speaker matching strictness (lower = stricter) |
+| `API_TOKEN` | `changeme` | `changeme` | API authentication token |
 
 ## OpenClaw Integration (Optional)
 
-[OpenClaw](https://github.com/anthropics/openclaw) users can connect their agents for summarization and chat. Start the proxy sidecar:
+[OpenClaw](https://github.com/anthropics/openclaw) users can connect their agents for transcript summarization and chat.
 
-```bash
-# Add --profile openclaw to enable the proxy container
-docker compose --profile openclaw up -d
-```
+1. Add to `.env`:
+   ```bash
+   OPENCLAW_GATEWAY_URL=wss://your-gateway.example.com
+   OPENCLAW_GATEWAY_TOKEN=your-token-here
+   ```
 
-Then go to Settings > LLM Provider > OpenClaw Proxy and configure your agent IDs.
+2. Start with the openclaw profile:
+   ```bash
+   docker compose --profile openclaw up -d
+   ```
 
-The proxy reads your `~/.openclaw/openclaw.json` config and makes your agents available to VoiceStack3 for transcript analysis and chat.
+3. Go to Settings > LLM Provider > OpenClaw and select your summary/chat agents.
 
-## CPU Mode
-
-Works on any machine (including Apple Silicon via Rosetta). Set `PLATFORM=cpu` in `.env`. Processing is ~2-3x audio length instead of faster-than-realtime on GPU.
+The proxy connects directly to your OpenClaw gateway over WSS — no CLI installation needed.
 
 ## Development
 
 ```bash
-# Backend + Worker mount source code for hot reload
-docker compose up
-# Frontend runs in dev mode with hot reload
+# Uses docker-compose.dev.yml — mounts source code for hot reload
+docker compose -f docker-compose.dev.yml up
 ```
 
 ## License

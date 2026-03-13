@@ -15,11 +15,12 @@ torch.load = _patched_load
 def main():
     hf_token = os.environ.get("HF_TOKEN", "").strip()
 
-    # ── WhisperX / faster-whisper large-v2 (~3 GB) ──────────────────────────
-    print("==> Downloading WhisperX / faster-whisper large-v2...")
+    # ── WhisperX / faster-whisper (~3 GB) ────────────────────────────────────
+    whisper_model = os.environ.get("WHISPER_MODEL", "large-v3")
+    print(f"==> Downloading WhisperX / faster-whisper {whisper_model}...")
     from faster_whisper import WhisperModel
     WhisperModel(
-        "large-v2",
+        whisper_model,
         device="cpu",
         compute_type="int8",
         download_root="/app/model_cache/whisper",
