@@ -1,0 +1,28 @@
+# PyTorch installed separately in Containerfile with CUDA index URL
+# (torch>=2.4.0, torchaudio>=2.4.0)
+
+# WhisperX (bundles faster-whisper, ctranslate2, pyannote.audio)
+whisperx==3.7.6
+
+# Emotion detection (emotion2vec)
+funasr==1.2.7
+
+# Speaker embeddings
+speechbrain==1.0.3
+
+# Audio processing
+librosa==0.10.2.post1
+soundfile==0.13.1
+
+# Database
+sqlalchemy==2.0.46
+psycopg[binary]==3.3.2
+pgvector==0.4.2
+
+# Job queue
+redis==7.1.1
+rq==2.6.1
+
+# Utilities
+python-dotenv==1.2.1
+numpy==2.3.5

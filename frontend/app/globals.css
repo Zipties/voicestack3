@@ -1,0 +1,94 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..800;1,9..40,300..800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    border-color: theme('colors.vs.border');
+  }
+
+  html, body {
+    height: 100dvh;
+    height: 100vh; /* fallback */
+  }
+
+  body {
+    @apply bg-vs-bg text-vs-text-primary font-sans antialiased;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-vs-border-bright rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-vs-text-muted;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 bg-vs-text-accent text-white rounded-lg font-medium
+           hover:bg-vs-text-accent/90 transition-colors duration-150
+           focus:outline-none focus:ring-2 focus:ring-vs-text-accent/50;
+  }
+
+  .btn-ghost {
+    @apply px-4 py-2 text-vs-text-secondary rounded-lg font-medium
+           hover:bg-vs-hover hover:text-vs-text-primary transition-colors duration-150;
+  }
+
+  .card {
+    @apply bg-vs-surface border border-vs-border rounded-xl;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .input {
+    @apply bg-vs-raised border border-vs-border rounded-lg px-3 py-2
+           text-vs-text-primary placeholder:text-vs-text-muted
+           focus:outline-none focus:ring-2 focus:ring-vs-text-accent/40 focus:border-vs-text-accent/60
+           transition-colors duration-150;
+  }
+
+  /* Segment row hover */
+  .segment-row {
+    @apply flex items-start gap-3 px-4 py-3 rounded-lg cursor-pointer
+           hover:bg-vs-hover transition-colors duration-100;
+  }
+
+  .segment-row.active {
+    @apply bg-vs-hover/70 border-l-2 border-vs-text-accent;
+  }
+}
+
+@layer utilities {
+  /* PWA safe area */
+  .safe-area-inset {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+
+  /* Emotion badge variants */
+  .emotion-happy { @apply bg-emotion-happy/15 text-emotion-happy; }
+  .emotion-sad { @apply bg-emotion-sad/15 text-emotion-sad; }
+  .emotion-angry { @apply bg-emotion-angry/15 text-emotion-angry; }
+  .emotion-neutral { @apply bg-emotion-neutral/15 text-emotion-neutral; }
+  .emotion-fearful { @apply bg-emotion-fearful/15 text-emotion-fearful; }
+  .emotion-surprised { @apply bg-emotion-surprised/15 text-emotion-surprised; }
+  .emotion-disgusted { @apply bg-emotion-disgusted/15 text-emotion-disgusted; }
+  .emotion-other { @apply bg-emotion-other/15 text-emotion-other; }
+  .emotion-unknown { @apply bg-emotion-unknown/15 text-emotion-unknown; }
+}

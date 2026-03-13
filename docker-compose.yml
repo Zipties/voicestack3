@@ -1,0 +1,90 @@
+# VoiceStack3 — pull prebuilt images, no build required
+# Usage: docker compose up -d
+# GPU:   docker compose -f docker-compose.yml -f compose.gpu.yml up -d
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-voice}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-voice}
+      POSTGRES_DB: ${POSTGRES_DB:-voice}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U voice"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    image: ghcr.io/zipties/voicestack3-backend:latest
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://voice:voice@db:5432/voice}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      API_TOKEN: ${API_TOKEN:-changeme}
+      APP_BASE_URL: ${APP_BASE_URL:-}
+      QDRANT_URL: ${QDRANT_URL:-}
+      EMBED_URL: ${EMBED_URL:-}
+      EMBED_API_KEY: ${EMBED_API_KEY:-}
+    volumes:
+      - data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    image: ghcr.io/zipties/voicestack3-worker:latest
+    restart: always
+    ports:
+      - "9000:9000"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://voice:voice@db:5432/voice}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      WHISPER_MODEL: ${WHISPER_MODEL:-large-v2}
+      WHISPER_COMPUTE_TYPE: ${WHISPER_COMPUTE_TYPE:-float16}
+      WHISPER_BATCH_SIZE: ${WHISPER_BATCH_SIZE:-16}
+      WHISPER_BEAM_SIZE: ${WHISPER_BEAM_SIZE:-8}
+      WHISPER_API_PORT: ${WHISPER_API_PORT:-9000}
+      SPEAKER_MATCH_THRESHOLD: ${SPEAKER_MATCH_THRESHOLD:-0.45}
+      PYTORCH_CUDA_ALLOC_CONF: max_split_size_mb:512
+    volumes:
+      - data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    image: ghcr.io/zipties/voicestack3-frontend:latest
+    restart: always
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  db_data:
+  data:

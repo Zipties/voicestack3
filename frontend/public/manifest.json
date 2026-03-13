@@ -1,0 +1,47 @@
+{
+  "name": "VoiceStack",
+  "short_name": "VoiceStack",
+  "description": "Audio intelligence: transcription, speaker identification, emotion detection",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0c0e14",
+  "theme_color": "#0c0e14",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "utilities"],
+  "scope": "/",
+  "lang": "en",
+  "share_target": {
+    "action": "/share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "files": [
+        {
+          "name": "file",
+          "accept": [
+            "audio/*",
+            "video/*",
+            ".m4a", ".mp3", ".wav", ".ogg", ".opus", ".webm", ".aac", ".flac",
+            ".mp4", ".mov", ".mkv", ".avi"
+          ]
+        }
+      ]
+    }
+  }
+}

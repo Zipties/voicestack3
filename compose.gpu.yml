@@ -1,0 +1,6 @@
+# GPU override — used automatically by install script on NVIDIA systems
+# Usage: podman compose -f podman-compose.yml -f compose.gpu.yml up -d
+services:
+  worker:
+    devices:
+      - nvidia.com/gpu=all

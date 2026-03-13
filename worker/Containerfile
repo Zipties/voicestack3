@@ -1,0 +1,70 @@
+ARG PLATFORM=cuda
+
+# ── CUDA base (Linux + NVIDIA GPU) ──────────────────────────────────────────
+FROM docker.io/nvidia/cuda:12.8.0-cudnn-runtime-ubuntu22.04 AS base-cuda
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y software-properties-common \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y \
+    python3.11 python3.11-dev python3.11-venv \
+    ffmpeg git gcc g++ \
+    libsndfile1-dev libffi-dev \
+    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3.11 -m ensurepip --upgrade \
+    && python3.11 -m pip install --upgrade pip setuptools wheel
+
+# PyTorch with CUDA
+RUN pip3 install --no-cache-dir \
+    torch torchaudio --extra-index-url https://download.pytorch.org/whl/cu124
+
+# ── CPU base (macOS / Linux without GPU) ────────────────────────────────────
+FROM docker.io/python:3.11-slim AS base-cpu
+
+RUN apt-get update && apt-get install -y \
+    ffmpeg git gcc g++ \
+    libsndfile1-dev libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# PyTorch CPU-only (smaller image, works on Apple Silicon via Rosetta/emulation)
+RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+# ── Common build (selected by PLATFORM arg) ─────────────────────────────────
+FROM base-${PLATFORM} AS final
+
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Install Python deps first (separate layer — changes here invalidate model cache)
+COPY requirements.txt ./
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# ── Bake ML models into the image ───────────────────────────────────────────
+# Cache dirs — set before download so faster-whisper / HF / ModelScope all
+# write to predictable locations that the runtime ENV vars point at.
+ENV WHISPER_CACHE_DIR=/app/model_cache/whisper
+ENV PYANNOTE_CACHE_DIR=/app/model_cache/pyannote
+ENV SPEECHBRAIN_CACHE_DIR=/app/model_cache/speechbrain
+ENV MODELSCOPE_CACHE=/app/model_cache/modelscope
+ENV HF_HOME=/app/model_cache/huggingface
+
+# HF_TOKEN is a build-time secret (pass with --build-arg HF_TOKEN=hf_...).
+# Required for the gated pyannote models; diarization is skipped if omitted.
+ARG HF_TOKEN=""
+ENV HF_TOKEN=${HF_TOKEN}
+
+COPY scripts/download_models.py /tmp/download_models.py
+RUN python3 /tmp/download_models.py && rm /tmp/download_models.py
+
+# After models are cached, tell HF/Transformers to stay offline at runtime.
+ENV HF_HUB_OFFLINE=1
+ENV TRANSFORMERS_OFFLINE=1
+
+# ── Application code (last — code changes don't bust model cache) ────────────
+COPY . .
+
+CMD ["python", "worker.py"]

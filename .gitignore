@@ -1,0 +1,40 @@
+# Data
+data/
+*.wav
+*.mp3
+*.opus
+*.m4a
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Node
+node_modules/
+.next/
+out/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Container artifacts
+*.tar
+
+# Model cache
+model_cache/
+
+# Claude Code
+CLAUDE.md
+.claude/
