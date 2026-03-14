@@ -2,6 +2,7 @@ name: Build & Push Docker Images
 
 on:
   push:
+    branches: [master]
     tags: ["v*"]
   workflow_dispatch:
 
@@ -10,7 +11,32 @@ env:
   IMAGE_PREFIX: ghcr.io/zipties/voicestack3
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      worker: ${{ steps.filter.outputs.worker }}
+      proxy: ${{ steps.filter.outputs.proxy }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        # On workflow_dispatch or tags, filter returns all true (no base to compare)
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+            worker:
+              - 'worker/**'
+            proxy:
+              - 'proxy/**'
+
   build-backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -35,6 +61,8 @@ jobs:
             ${{ env.IMAGE_PREFIX }}-backend:${{ github.ref_name }}
 
   build-frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -59,6 +87,8 @@ jobs:
             ${{ env.IMAGE_PREFIX }}-frontend:${{ github.ref_name }}
 
   build-worker:
+    needs: changes
+    if: needs.changes.outputs.worker == 'true' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -86,6 +116,8 @@ jobs:
             ${{ env.IMAGE_PREFIX }}-worker:${{ github.ref_name }}
 
   build-proxy:
+    needs: changes
+    if: needs.changes.outputs.proxy == 'true' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -110,6 +142,8 @@ jobs:
             ${{ env.IMAGE_PREFIX }}-proxy:${{ github.ref_name }}
 
   build-worker-cpu:
+    needs: changes
+    if: needs.changes.outputs.worker == 'true' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: read
