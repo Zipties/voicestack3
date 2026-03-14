@@ -40,10 +40,12 @@ def detect_emotions(audio_path: str, segments: list, job_id: str) -> list[dict]:
         device = "cpu"
 
     from funasr import AutoModel
+    # Use local path directly to avoid ModelScope re-download at runtime
+    # (the model is baked into the image at build time)
+    local_model = "/app/model_cache/modelscope/models/iic/emotion2vec_plus_large"
     model = AutoModel(
-        model="iic/emotion2vec_plus_large",
+        model=local_model,
         device=device,
-        hub="ms",
     )
 
     # Load full audio once
