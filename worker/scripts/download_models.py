@@ -37,11 +37,15 @@ def main():
     if hf_token:
         print("==> Downloading pyannote/speaker-diarization-3.1...")
         from pyannote.audio import Pipeline
-        Pipeline.from_pretrained(
+        # Don't pass cache_dir — let it use HF_HOME so runtime finds the
+        # models in the same location (whisperx doesn't pass cache_dir).
+        pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
             use_auth_token=hf_token,
-            cache_dir="/app/model_cache/pyannote",
         )
+        # Force download of sub-models (segmentation + embedding) by sending
+        # pipeline to CPU — from_pretrained alone only fetches the config.
+        pipeline.to(torch.device("cpu"))
         print("    done.")
     else:
         print("WARNING: HF_TOKEN not set — skipping pyannote download.")
