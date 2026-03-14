@@ -49,6 +49,8 @@ services:
       OPENCLAW_PROXY_URL: ${OPENCLAW_PROXY_URL:-http://openclaw-proxy:8100}
     volumes:
       - data:/data
+      # Uncomment to enable file watcher — drop audio files here for auto-processing
+      # - ~/VoiceStack Dropbox:/data/watch
     depends_on:
       db:
         condition: service_healthy

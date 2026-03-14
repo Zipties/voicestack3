@@ -200,9 +200,7 @@ export default function JobsPage() {
                 className="group card px-4 py-3 hover:bg-vs-hover/50 cursor-pointer transition-colors duration-100 animate-fade-in"
                 onClick={() => {
                   if (isConfirming) return;
-                  if (statusKey === "completed") {
-                    router.push(`/jobs/${job.id}`);
-                  }
+                  router.push(`/jobs/${job.id}`);
                 }}
               >
                 <div className="flex items-start gap-3 min-w-0">

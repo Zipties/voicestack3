@@ -1,4 +1,16 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+// SSE endpoints need to bypass Next.js rewrite proxy (it buffers streaming responses).
+// In production behind Traefik/nginx, the reverse proxy handles SSE correctly (same origin).
+// For local Docker Compose, connect directly to the backend on port 8000.
+function getSSEUrl(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  if (typeof window === "undefined") return "";
+  // If the page is served on port 3000 (Next.js), SSE goes direct to backend on 8000
+  const loc = window.location;
+  if (loc.port === "3000") return `${loc.protocol}//${loc.hostname}:8000`;
+  return ""; // Behind reverse proxy — same origin works
+}
+const SSE_URL = getSSEUrl();
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -451,9 +463,11 @@ export function subscribeToLogs(
   jobId: string,
   onLog: (line: string) => void,
 ): () => void {
-  const es = new EventSource(`${API_URL}/api/jobs/${jobId}/logs`);
+  const es = new EventSource(`${SSE_URL}/api/jobs/${jobId}/logs`);
+  let errorCount = 0;
 
   es.onmessage = (event) => {
+    errorCount = 0;
     try {
       const data = JSON.parse(event.data);
       if (data.line) onLog(data.line);
@@ -462,8 +476,11 @@ export function subscribeToLogs(
     }
   };
 
+  // Let EventSource auto-reconnect on transient errors.
+  // Only close after sustained failures (server gone).
   es.onerror = () => {
-    es.close();
+    errorCount++;
+    if (errorCount > 5) es.close();
   };
 
   return () => es.close();
@@ -474,9 +491,11 @@ export function subscribeToProgress(
   onProgress: (data: JobProgress) => void,
   onDone?: () => void
 ): () => void {
-  const es = new EventSource(`${API_URL}/api/jobs/${jobId}/progress`);
+  const es = new EventSource(`${SSE_URL}/api/jobs/${jobId}/progress`);
+  let errorCount = 0;
 
   es.onmessage = (event) => {
+    errorCount = 0;
     try {
       const data: JobProgress = JSON.parse(event.data);
       onProgress(data);
@@ -490,8 +509,11 @@ export function subscribeToProgress(
   };
 
   es.onerror = () => {
-    es.close();
-    onDone?.();
+    errorCount++;
+    if (errorCount > 5) {
+      es.close();
+      onDone?.();
+    }
   };
 
   return () => es.close();

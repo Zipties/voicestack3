@@ -308,7 +308,11 @@ async def stream_job_progress(job_id: str):
 
 @router.get("/{job_id}/logs")
 async def stream_job_logs(job_id: str):
-    """SSE endpoint that streams real-time pipeline logs via Redis pub/sub."""
+    """SSE endpoint that streams pipeline logs by polling Redis list.
+
+    Uses a simple polling approach (like the progress endpoint) instead of
+    async Redis pub/sub, which doesn't flush properly through StreamingResponse.
+    """
     from main import shutdown_event
 
     try:
@@ -316,42 +320,32 @@ async def stream_job_logs(job_id: str):
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid job ID")
 
-    async def log_stream():
-        redis = AsyncRedis.from_url(REDIS_URL)
-        pubsub = redis.pubsub()
-        channel = f"job:{job_id}:logs"
-
-        # Replay any buffered log history (for late-connecting clients)
+    def log_stream():
+        conn = Redis.from_url(REDIS_URL)
         history_key = f"job:{job_id}:log_history"
-        history = await redis.lrange(history_key, 0, -1)
-        for entry in history:
-            line = entry.decode("utf-8", errors="replace") if isinstance(entry, bytes) else entry
-            yield f"data: {json.dumps({'line': line})}\n\n"
-
-        await pubsub.subscribe(channel)
+        cursor = 0  # Track how many lines we've already sent
 
         try:
-            # Timeout after 10 min of no messages (job should be done by then)
-            idle_seconds = 0
-            while idle_seconds < 600 and not shutdown_event.is_set():
-                msg = await pubsub.get_message(
-                    ignore_subscribe_messages=True, timeout=1.0
-                )
-                if msg and msg["type"] == "message":
-                    idle_seconds = 0
-                    line = msg["data"]
-                    if isinstance(line, bytes):
-                        line = line.decode("utf-8", errors="replace")
-                    yield f"data: {json.dumps({'line': line})}\n\n"
+            max_idle = 300  # Stop after 5 min of no new lines
+            idle = 0
+            while idle < max_idle and not shutdown_event.is_set():
+                entries = conn.lrange(history_key, cursor, -1)
+                if entries:
+                    idle = 0
+                    for entry in entries:
+                        line = entry.decode("utf-8", errors="replace") if isinstance(entry, bytes) else entry
+                        yield f"data: {json.dumps({'line': line})}\n\n"
+                    cursor += len(entries)
                 else:
-                    idle_seconds += 1
-                    # Send keepalive every 15s
-                    if idle_seconds % 15 == 0:
+                    idle += 1
+                    # Send keepalive every 15s (every 15 iterations at 1s each)
+                    if idle % 15 == 0:
                         yield f": keepalive\n\n"
+
+                import time
+                time.sleep(1)
         finally:
-            await pubsub.unsubscribe(channel)
-            await pubsub.close()
-            await redis.close()
+            conn.close()
 
     return StreamingResponse(
         log_stream(),
