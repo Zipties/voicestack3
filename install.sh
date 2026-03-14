@@ -154,7 +154,13 @@ configure_env() {
     fi
 
     # Set platform-appropriate defaults
-    if [ "$PLATFORM" = "cpu" ]; then
+    if [ "$PLATFORM" = "cuda" ]; then
+        if [ "$OS" = "Darwin" ]; then
+            sed -i '' "s|WORKER_TAG=cpu|WORKER_TAG=latest|" "$ENV_FILE"
+        else
+            sed -i "s|WORKER_TAG=cpu|WORKER_TAG=latest|" "$ENV_FILE"
+        fi
+    else
         if [ "$OS" = "Darwin" ]; then
             sed -i '' "s|WHISPER_COMPUTE_TYPE=float16|WHISPER_COMPUTE_TYPE=int8|" "$ENV_FILE"
             sed -i '' "s|WHISPER_BATCH_SIZE=16|WHISPER_BATCH_SIZE=8|" "$ENV_FILE"
