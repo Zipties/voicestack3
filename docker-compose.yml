@@ -56,7 +56,7 @@ services:
         condition: service_healthy
 
   worker:
-    image: ghcr.io/zipties/voicestack3-worker:${WORKER_TAG:-latest}
+    image: ghcr.io/zipties/voicestack3-worker:${WORKER_TAG:-cpu}
     restart: always
     ports:
       - "9000:9000"
