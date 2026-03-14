@@ -1,7 +1,8 @@
 """Main pipeline orchestrator with subprocess isolation.
 
 Architecture:
-  - Transcription: runs in-process using persistent WhisperX model (~4 GB VRAM)
+  - Persistent mode: transcription in-process using persistent WhisperX model (~4 GB VRAM)
+  - One-shot mode: entire pipeline runs in subprocess (model loaded and freed per job)
   - Everything else: spawns isolated subprocess that exits when done (VRAM freed)
 
 The persistent WhisperX model is loaded once at startup (see whisper_model.py)
@@ -14,10 +15,12 @@ import json
 import subprocess
 import threading
 import time
+import urllib.request
 
 from redis import Redis
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
 
 
 def _get_redis():
@@ -63,14 +66,30 @@ def log_vram(label: str, job_id: str = None, redis_conn=None):
         pass
 
 
+def _fetch_persistent_setting() -> bool:
+    """Fetch whisper_persistent from backend settings API. Default: True."""
+    try:
+        req = urllib.request.Request(f"{BACKEND_URL}/api/settings")
+        resp = urllib.request.urlopen(req, timeout=5)
+        settings = json.loads(resp.read())
+        return settings.get("whisper_persistent", True)
+    except Exception as e:
+        print(f"[pipeline] Could not fetch persistent setting, defaulting to True: {e}", flush=True)
+        return True
+
+
 def run_pipeline(job_id: str, input_path: str):
-    """Entry point called by RQ. Transcribes in-process, rest in subprocess."""
+    """Entry point called by RQ. Transcribes in-process or delegates to subprocess."""
     redis_conn = _get_redis()
+
+    # Check if we should use persistent (in-process) or one-shot (subprocess) mode
+    is_persistent = _fetch_persistent_setting()
+    mode_label = "persistent (in-process transcription)" if is_persistent else "one-shot (full subprocess pipeline)"
 
     _log(job_id, f"\n{'='*60}", redis_conn)
     _log(job_id, f"[pipeline] Starting job {job_id}", redis_conn)
     _log(job_id, f"[pipeline] Input: {input_path}", redis_conn)
-    _log(job_id, f"[pipeline] Mode: hybrid (transcription in-process, rest in subprocess)", redis_conn)
+    _log(job_id, f"[pipeline] Mode: {mode_label}", redis_conn)
     _log(job_id, f"{'='*60}\n", redis_conn)
 
     log_vram("before_job", job_id, redis_conn)
@@ -85,41 +104,54 @@ def run_pipeline(job_id: str, input_path: str):
     )
     db.commit()
 
-    # ── Step 1: Transcribe in-process (persistent WhisperX) ──────────
-    db.execute(
-        text("UPDATE jobs SET progress = 10, pipeline_stage = 'transcription' WHERE id = :id"),
-        {"id": job_id}
-    )
-    db.commit()
-    db.close()
+    if is_persistent:
+        # ── Persistent mode: Transcribe in-process (persistent WhisperX) ──
+        db.execute(
+            text("UPDATE jobs SET progress = 10, pipeline_stage = 'transcription' WHERE id = :id"),
+            {"id": job_id}
+        )
+        db.commit()
+        db.close()
 
-    _log(job_id, "[pipeline] Transcribing with persistent WhisperX model...", redis_conn)
-    from whisper_model import transcribe_audio
-    tx_result = transcribe_audio(input_path)
-    _log(job_id, f"[pipeline] Transcription done: {len(tx_result['segments'])} segments, "
-          f"lang={tx_result['language']}", redis_conn)
+        _log(job_id, "[pipeline] Transcribing with persistent WhisperX model...", redis_conn)
+        from whisper_model import transcribe_audio
+        tx_result = transcribe_audio(input_path)
+        _log(job_id, f"[pipeline] Transcription done: {len(tx_result['segments'])} segments, "
+              f"lang={tx_result['language']}", redis_conn)
 
-    log_vram("after_transcription", job_id, redis_conn)
+        log_vram("after_transcription", job_id, redis_conn)
 
-    # ── Step 2: Spawn subprocess for alignment + diarization + rest ───
-    # Pass transcription results via stdin to avoid CLI arg limits
-    tx_json = json.dumps(tx_result)
+        # Pass transcription results via stdin to subprocess
+        tx_json = json.dumps(tx_result)
+        worker_script = os.path.join(os.path.dirname(__file__), "_gpu_worker.py")
 
-    worker_script = os.path.join(os.path.dirname(__file__), "_gpu_worker.py")
+        proc = subprocess.Popen(
+            [sys.executable, "-u", worker_script, job_id, input_path, "--tx-stdin"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env={**os.environ},
+        )
 
-    # Stream subprocess stdout line-by-line to both terminal and Redis
-    proc = subprocess.Popen(
-        [sys.executable, "-u", worker_script, job_id, input_path, "--tx-stdin"],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        env={**os.environ},
-    )
+        # Send transcription data to stdin, then close it
+        proc.stdin.write(tx_json)
+        proc.stdin.close()
+    else:
+        # ── One-shot mode: Skip in-process transcription, full subprocess pipeline ──
+        db.close()
 
-    # Send transcription data to stdin, then close it
-    proc.stdin.write(tx_json)
-    proc.stdin.close()
+        _log(job_id, "[pipeline] One-shot mode: full pipeline will run in subprocess...", redis_conn)
+
+        worker_script = os.path.join(os.path.dirname(__file__), "_gpu_worker.py")
+
+        proc = subprocess.Popen(
+            [sys.executable, "-u", worker_script, job_id, input_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env={**os.environ},
+        )
 
     # Stream stdout line by line, filter noise for Redis
     _LOG_PREFIXES = ("[pipeline]", "[speakers]", "[persist]",

@@ -4,6 +4,7 @@ Architecture (VoiceStack3):
   - transcribe_only(): Uses persistent WhisperX model in main process
   - align_and_diarize(): Loads alignment + diarization models in subprocess
   - transcribe(): Legacy combined function (still works, loads own model)
+    Now accepts optional model_name and initial_prompt overrides from settings.
 """
 
 import os
@@ -113,11 +114,22 @@ def align_and_diarize(
     }
 
 
-def transcribe(audio_path: str, job_id: str) -> dict:
-    """Legacy: full transcribe → align → diarize in one call.
+def transcribe(
+    audio_path: str,
+    job_id: str,
+    model_name: str | None = None,
+    initial_prompt: str | None = None,
+) -> dict:
+    """Legacy: full transcribe -> align -> diarize in one call.
 
     Loads its own WhisperX model. Used by _gpu_worker.py when running
-    the entire pipeline in a subprocess.
+    the entire pipeline in a subprocess (one-shot mode).
+
+    Args:
+        audio_path: Path to 16kHz mono WAV
+        job_id: Job ID for logging
+        model_name: Override model name (from settings API). Falls back to env var.
+        initial_prompt: Override initial prompt (from settings API). Falls back to env var.
     """
     import torch
     import whisperx
@@ -132,31 +144,34 @@ def transcribe(audio_path: str, job_id: str) -> dict:
     else:
         device = "cpu"
         compute_type = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
-    model_name = os.getenv("WHISPER_MODEL", "large-v3")
+
+    # Use provided overrides, fall back to env vars
+    effective_model = model_name or os.getenv("WHISPER_MODEL", "large-v3")
+    effective_prompt = initial_prompt or os.getenv(
+        "WHISPER_INITIAL_PROMPT",
+        "Natural conversational English with proper punctuation, "
+        "including question marks, commas, and periods."
+    )
     batch_size = int(os.getenv("WHISPER_BATCH_SIZE", "16"))
     beam_size = int(os.getenv("WHISPER_BEAM_SIZE", "20"))
     language = os.getenv("WHISPER_LANGUAGE", "en")
-    initial_prompt = os.getenv("WHISPER_INITIAL_PROMPT", "")
     hf_token = os.getenv("HF_TOKEN")
-    hf_offline = os.getenv("HF_HUB_OFFLINE", "0") == "1"
+    download_root = os.getenv("WHISPER_CACHE_DIR", "/data/model_cache/whisper")
 
-    if not hf_token and not hf_offline:
-        raise RuntimeError("HF_TOKEN required for speaker diarization (pyannote)")
-
-    print(f"[WhisperX] Loading model: {model_name} ({compute_type}) on {device}")
+    print(f"[WhisperX] Loading model: {effective_model} ({compute_type}) on {device}")
     log_gpu_memory("before_whisperx")
 
     # Step 1: Transcribe
     model = whisperx.load_model(
-        model_name,
+        effective_model,
         device=device,
         compute_type=compute_type,
         language=language,
         asr_options={
             "beam_size": beam_size,
-            "initial_prompt": initial_prompt if initial_prompt else None,
+            "initial_prompt": effective_prompt if effective_prompt else None,
         },
-        download_root=os.getenv("WHISPER_CACHE_DIR", "/app/model_cache/whisper"),
+        download_root=download_root,
     )
     audio = whisperx.load_audio(audio_path)
     result = model.transcribe(audio, batch_size=batch_size, language=language)

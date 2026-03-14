@@ -34,6 +34,10 @@ DEFAULTS = {
     "file_watcher_min_size_kb": 10,
     "file_watcher_cooldown_seconds": 120,
     "file_watcher_poll_interval_seconds": 30,
+    # Whisper model
+    "whisper_model": "large-v3",
+    "whisper_persistent": True,
+    "whisper_prompt": "",
     # Pipeline stages (all enabled by default)
     "pipeline_alignment": True,
     "pipeline_diarization": True,

@@ -320,6 +320,10 @@ export interface AppSettings {
   qdrant_collection: string;
   embed_url: string;
   embed_api_key: string;
+  // Whisper model
+  whisper_model: string;
+  whisper_persistent: boolean;
+  whisper_prompt: string;
   // Pipeline stages
   pipeline_alignment: boolean;
   pipeline_diarization: boolean;

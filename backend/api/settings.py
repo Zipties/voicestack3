@@ -57,6 +57,10 @@ class SettingsUpdate(BaseModel):
     file_watcher_min_size_kb: int | None = None
     file_watcher_cooldown_seconds: int | None = None
     file_watcher_poll_interval_seconds: int | None = None
+    # Whisper model
+    whisper_model: str | None = None
+    whisper_persistent: bool | None = None
+    whisper_prompt: str | None = None
     # Pipeline stages
     pipeline_alignment: bool | None = None
     pipeline_diarization: bool | None = None

@@ -18,6 +18,7 @@ import {
   Eye,
   Play,
   RefreshCw,
+  Mic,
 } from "lucide-react";
 import {
   fetchSettings,
@@ -96,6 +97,11 @@ export default function SettingsPage() {
   const [openclawSummaryAgent, setOpenclawSummaryAgent] = useState("");
   const [openclawChatAgent, setOpenclawChatAgent] = useState("");
 
+  const [whisperModel, setWhisperModel] = useState("large-v3");
+  const [whisperPersistent, setWhisperPersistent] = useState(true);
+  const [whisperPrompt, setWhisperPrompt] = useState("");
+  const [showWhisperPrompt, setShowWhisperPrompt] = useState(false);
+
   const [watcherEnabled, setWatcherEnabled] = useState(false);
   const [watcherPath, setWatcherPath] = useState("");
   const [watcherExtensions, setWatcherExtensions] = useState(".m4a,.mp3,.wav,.ogg,.flac,.opus,.mp4,.webm");
@@ -127,6 +133,9 @@ export default function SettingsPage() {
         setOpenclawGatewayToken(s.openclaw_gateway_token || "");
         setOpenclawSummaryAgent(s.openclaw_summary_agent || "");
         setOpenclawChatAgent(s.openclaw_chat_agent || "");
+        setWhisperModel(s.whisper_model || "large-v3");
+        setWhisperPersistent(s.whisper_persistent ?? true);
+        setWhisperPrompt(s.whisper_prompt || "");
         setWatcherEnabled(s.file_watcher_enabled ?? false);
         setWatcherPath(s.file_watcher_path || "");
         setWatcherExtensions(s.file_watcher_extensions || ".m4a,.mp3,.wav,.ogg,.flac,.opus,.mp4,.webm");
@@ -184,6 +193,9 @@ export default function SettingsPage() {
         qdrant_collection: qdrantCollection,
         embed_url: embedUrl,
 
+        whisper_model: whisperModel,
+        whisper_persistent: whisperPersistent,
+        whisper_prompt: whisperPrompt,
         file_watcher_enabled: watcherEnabled,
         file_watcher_path: watcherPath,
         file_watcher_extensions: watcherExtensions,
@@ -571,6 +583,108 @@ export default function SettingsPage() {
             )}
           </div>
         )}
+      </section>
+
+      {/* ── Whisper Model ── */}
+      <section className="card p-6 mb-4">
+        <div className="flex items-center gap-2 mb-4">
+          <Mic className="w-5 h-5 text-vs-text-accent" />
+          <h2 className="text-lg font-medium">Whisper Model</h2>
+        </div>
+        <p className="text-sm text-vs-text-secondary mb-4">
+          Configure the Whisper speech-to-text model used for transcription.
+        </p>
+
+        <div className="space-y-4">
+          {/* Model Selector */}
+          <div>
+            <label className="block text-sm text-vs-text-secondary mb-1">Model</label>
+            <select
+              value={whisperModel}
+              onChange={(e) => setWhisperModel(e.target.value)}
+              className="input w-full"
+            >
+              <option value="tiny">Tiny (~39 MB) — Fastest, lowest accuracy</option>
+              <option value="base">Base (~139 MB) — Fast, basic accuracy</option>
+              <option value="small">Small (~461 MB) — Good balance</option>
+              <option value="medium">Medium (~1.5 GB) — High accuracy</option>
+              <option value="large-v2">Large v2 (~2.9 GB) — Very high accuracy</option>
+              <option value="large-v3">Large v3 (~3 GB) — Best accuracy</option>
+              <option value="large-v3-turbo">Large v3 Turbo (~1.6 GB) — Near-best accuracy, 4x faster</option>
+              <option value="distil-large-v3">Distil Large v3 (~1.5 GB) — Fast, high accuracy</option>
+            </select>
+            <p className="text-2xs text-vs-text-muted mt-1">
+              Changing the model requires downloading it on first use. Larger models are more accurate but use more memory and are slower on CPU.
+            </p>
+          </div>
+
+          {/* Persistent Mode Toggle */}
+          <div className="flex items-center justify-between">
+            <div className="flex-1 mr-4">
+              <h3 className="text-sm font-medium">Persistent Mode</h3>
+              <p className="text-2xs text-vs-text-muted mt-1">
+                {whisperPersistent
+                  ? "Model stays loaded in memory for fast transcription and API access (port 9000). Uses more RAM but much faster for multiple files."
+                  : "Model loads per job and unloads after. Saves memory but slower. API endpoint disabled."}
+              </p>
+            </div>
+            <button
+              onClick={() => setWhisperPersistent(!whisperPersistent)}
+              className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
+                whisperPersistent ? "bg-vs-text-accent" : "bg-vs-border"
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
+                  whisperPersistent ? "translate-x-5" : ""
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Transcription Prompt (collapsible) */}
+          <div className="border-t border-vs-border pt-4">
+            <button
+              type="button"
+              onClick={() => setShowWhisperPrompt(!showWhisperPrompt)}
+              className="flex items-center gap-2 text-sm text-vs-text-secondary hover:text-vs-text-primary transition-colors"
+            >
+              {showWhisperPrompt ? (
+                <ChevronDown className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5" />
+              )}
+              <FileText className="w-3.5 h-3.5" />
+              Transcription Prompt
+            </button>
+            {showWhisperPrompt && (
+              <div className="mt-3">
+                <p className="text-xs text-vs-text-muted mb-2">
+                  Help Whisper recognize domain-specific words, names, and terms. Add custom spellings, technical vocabulary, or proper nouns.
+                </p>
+                <textarea
+                  value={whisperPrompt}
+                  onChange={(e) => setWhisperPrompt(e.target.value)}
+                  className="input w-full h-32 text-xs font-mono resize-y"
+                  placeholder="e.g. Technical terms: Kubernetes, PostgreSQL, Terraform. Names: Dr. Sarah Chen, John McAllister."
+                />
+                <div className="flex items-center gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setWhisperPrompt("")}
+                    className="btn-ghost text-xs flex items-center gap-1"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    Reset to Default
+                  </button>
+                  <span className="text-2xs text-vs-text-muted">
+                    {whisperPrompt ? "Using custom prompt" : "No prompt set"}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </section>
 
       {/* ── Processing Pipeline ── */}

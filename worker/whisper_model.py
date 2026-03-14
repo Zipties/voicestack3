@@ -1,8 +1,12 @@
-"""WhisperX model manager with idle auto-unload.
+"""WhisperX model manager with idle auto-unload and runtime model switching.
 
 Loads WhisperX on first request, unloads after idle timeout to free VRAM.
 ~4 GB VRAM when loaded, ~6 GB peak during transcription. On a 24 GB RTX 4090
 that leaves 18+ GB for other workloads when idle.
+
+Settings are fetched from the backend API every 30 seconds. If the configured
+model has changed, the current model is unloaded and the new one is loaded.
+If the backend is unreachable, cached/default values are used.
 
 The model lock ensures:
   - No unload while a transcription is in progress
@@ -16,8 +20,10 @@ Benchmarks (3 min audio, large-v2, float16, RTX 4090):
 
 import os
 import gc
+import json
 import time
 import threading
+import urllib.request
 from dataclasses import replace as dc_replace
 
 # PyTorch 2.6+ safe loading fix - must be applied before any model loads
@@ -35,6 +41,20 @@ _model_lock = threading.Lock()
 _last_used: float = 0.0
 _reaper_started = False
 _parked_on_cpu = False  # True when model is offloaded to CPU RAM
+_loaded_model_name: str | None = None  # Track which model is currently loaded
+
+# Settings cache
+_settings_cache: dict | None = None
+_settings_cache_time: float = 0.0
+_SETTINGS_CACHE_TTL = 30  # seconds
+
+BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
+
+AVAILABLE_MODELS = [
+    "tiny", "tiny.en", "base", "base.en", "small", "small.en",
+    "medium", "medium.en", "large-v2", "large-v3", "large-v3-turbo",
+    "distil-large-v3",
+]
 
 if torch.cuda.is_available():
     DEVICE = "cuda"
@@ -52,14 +72,90 @@ LANGUAGE = os.getenv("WHISPER_LANGUAGE", "en")
 INITIAL_PROMPT = os.getenv(
     "WHISPER_INITIAL_PROMPT",
     "Natural conversational English with proper punctuation, "
-    "including question marks, commas, and periods. "
-    "Tech terms: Traefik, Proxmox, Docker, Authelia, Radarr, Sonarr, "
-    "Readarr, Bazarr, Prowlarr, Piflix, Overseerr, Tautulli, Plex, "
-    "Frigate, qBittorrent, SABnzbd, TrueNAS, ZFS, UniFi, pfSense, "
-    "VLAN, nginx, systemd, Podman, Redis, PostgreSQL, WhisperX."
+    "including question marks, commas, and periods."
 )
-CACHE_DIR = os.getenv("WHISPER_CACHE_DIR", "/app/model_cache/whisper")
+CACHE_DIR = os.getenv("WHISPER_CACHE_DIR", "/data/model_cache/whisper")
 IDLE_TIMEOUT = int(os.getenv("WHISPER_IDLE_TIMEOUT", "1800"))  # 30 min default
+
+
+def _fetch_settings() -> dict | None:
+    """Fetch settings from backend API with caching. Returns None on failure."""
+    global _settings_cache, _settings_cache_time
+
+    now = time.time()
+    if _settings_cache is not None and (now - _settings_cache_time) < _SETTINGS_CACHE_TTL:
+        return _settings_cache
+
+    try:
+        req = urllib.request.Request(f"{BACKEND_URL}/api/settings")
+        resp = urllib.request.urlopen(req, timeout=5)
+        settings = json.loads(resp.read())
+        _settings_cache = settings
+        _settings_cache_time = now
+        return settings
+    except Exception as e:
+        print(f"[whisper] Could not fetch settings, using cached/defaults: {e}", flush=True)
+        return _settings_cache  # Return stale cache, or None if never fetched
+
+
+def _get_effective_model_name() -> str:
+    """Get the model name to use, checking settings API first."""
+    settings = _fetch_settings()
+    if settings:
+        model = settings.get("whisper_model", "").strip()
+        if model and model in AVAILABLE_MODELS:
+            return model
+    return MODEL_NAME
+
+
+def _get_effective_prompt() -> str:
+    """Get the initial prompt to use, checking settings API first."""
+    settings = _fetch_settings()
+    if settings:
+        prompt = settings.get("whisper_prompt", "").strip()
+        if prompt:
+            return prompt
+    return INITIAL_PROMPT
+
+
+def reload_model(model_name: str):
+    """Unload current model and load a new one. Caller MUST hold _model_lock."""
+    global _model, _last_used, _parked_on_cpu, _loaded_model_name
+
+    old_name = _loaded_model_name
+    print(f"[whisper] Reloading model: {old_name} -> {model_name}", flush=True)
+
+    # Unload old model
+    if _model is not None:
+        del _model
+        _model = None
+        _parked_on_cpu = False
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        print(f"[whisper] Old model ({old_name}) unloaded, VRAM freed.", flush=True)
+
+    # Load new model
+    t0 = time.time()
+    prompt = _get_effective_prompt()
+    print(f"[whisper] Loading {model_name} ({COMPUTE_TYPE}) on {DEVICE}, "
+          f"lang={LANGUAGE}, beam={BEAM_SIZE}...", flush=True)
+    _model = whisperx.load_model(
+        model_name,
+        device=DEVICE,
+        compute_type=COMPUTE_TYPE,
+        language=LANGUAGE,
+        asr_options={
+            "beam_size": BEAM_SIZE,
+            "initial_prompt": prompt if prompt else None,
+        },
+        download_root=CACHE_DIR,
+    )
+    _loaded_model_name = model_name
+    _last_used = time.time()
+    load_time = _last_used - t0
+    print(f"[whisper] Model {model_name} loaded in {load_time:.1f}s. beam_size={BEAM_SIZE}, "
+          f"initial_prompt={'set' if prompt else 'none'}", flush=True)
 
 
 def _start_reaper():
@@ -118,7 +214,14 @@ def _start_reaper():
 
 def _ensure_model():
     """Load model if not already loaded. Caller MUST hold _model_lock."""
-    global _model, _last_used, _parked_on_cpu
+    global _model, _last_used, _parked_on_cpu, _loaded_model_name
+
+    # Check if model needs to be switched
+    desired_model = _get_effective_model_name()
+    if _model is not None and _loaded_model_name != desired_model:
+        print(f"[whisper] Model switch detected: {_loaded_model_name} -> {desired_model}", flush=True)
+        reload_model(desired_model)
+        return _model
 
     if _model is not None and _parked_on_cpu:
         t0 = time.time()
@@ -132,24 +235,28 @@ def _ensure_model():
     if _model is not None:
         return _model
 
+    model_name = desired_model
+    prompt = _get_effective_prompt()
+
     t0 = time.time()
-    print(f"[whisper] Loading {MODEL_NAME} ({COMPUTE_TYPE}) on {DEVICE}, "
+    print(f"[whisper] Loading {model_name} ({COMPUTE_TYPE}) on {DEVICE}, "
           f"lang={LANGUAGE}, beam={BEAM_SIZE}...", flush=True)
     _model = whisperx.load_model(
-        MODEL_NAME,
+        model_name,
         device=DEVICE,
         compute_type=COMPUTE_TYPE,
         language=LANGUAGE,
         asr_options={
             "beam_size": BEAM_SIZE,
-            "initial_prompt": INITIAL_PROMPT if INITIAL_PROMPT else None,
+            "initial_prompt": prompt if prompt else None,
         },
         download_root=CACHE_DIR,
     )
+    _loaded_model_name = model_name
     _last_used = time.time()
     load_time = _last_used - t0
     print(f"[whisper] Model loaded in {load_time:.1f}s. beam_size={BEAM_SIZE}, "
-          f"initial_prompt={'set' if INITIAL_PROMPT else 'none'}", flush=True)
+          f"initial_prompt={'set' if prompt else 'none'}", flush=True)
     return _model
 
 
@@ -165,7 +272,7 @@ def transcribe_audio(
     Args:
         audio_path: Path to audio file (any format ffmpeg supports)
         language: Override language (default: server LANGUAGE env var)
-        initial_prompt: Override initial prompt (default: server INITIAL_PROMPT env var)
+        initial_prompt: Override initial prompt (default: settings or env var)
         beam_size: Override beam size (default: server BEAM_SIZE env var)
         condition_on_previous_text: Use previous segment as context (default: False)
 
@@ -183,7 +290,9 @@ def transcribe_audio(
     global _last_used
 
     lang = language or LANGUAGE
-    prompt = initial_prompt if initial_prompt is not None else INITIAL_PROMPT
+    # Use settings-based prompt if no explicit override
+    effective_prompt = _get_effective_prompt()
+    prompt = initial_prompt if initial_prompt is not None else effective_prompt
     beams = beam_size if beam_size is not None else BEAM_SIZE
     cond_prev = condition_on_previous_text if condition_on_previous_text is not None else False
 
@@ -198,7 +307,7 @@ def transcribe_audio(
 
         # Per-request overrides: temporarily swap model options
         overrides = {}
-        if prompt != INITIAL_PROMPT:
+        if prompt != effective_prompt:
             overrides["initial_prompt"] = prompt if prompt else None
         if beams != BEAM_SIZE:
             overrides["beam_size"] = beams

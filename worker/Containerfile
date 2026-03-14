@@ -44,8 +44,9 @@ COPY requirements.txt ./
 RUN pip3 install --no-cache-dir -r requirements.txt
 
 # ── Bake ML models into the image ───────────────────────────────────────────
-# Cache dirs — set before download so faster-whisper / HF / ModelScope all
-# write to predictable locations that the runtime ENV vars point at.
+# Build-time cache at /app/model_cache/ (baked into image layer).
+# At runtime, entrypoint copies these to /data/model_cache/ (persistent volume)
+# so user-downloaded models survive container recreation.
 ENV WHISPER_CACHE_DIR=/app/model_cache/whisper
 ENV PYANNOTE_CACHE_DIR=/app/model_cache/pyannote
 ENV SPEECHBRAIN_CACHE_DIR=/app/model_cache/speechbrain
@@ -60,11 +61,16 @@ ENV HF_TOKEN=${HF_TOKEN}
 COPY scripts/download_models.py /tmp/download_models.py
 RUN python3 /tmp/download_models.py && rm /tmp/download_models.py
 
-# After models are cached, tell HF/Transformers to stay offline at runtime.
-ENV HF_HUB_OFFLINE=1
-ENV TRANSFORMERS_OFFLINE=1
+# Switch runtime cache dirs to /data/ (persistent volume).
+# The entrypoint seeds these from the baked /app/model_cache/ on first start.
+ENV WHISPER_CACHE_DIR=/data/model_cache/whisper
+ENV PYANNOTE_CACHE_DIR=/data/model_cache/pyannote
+ENV SPEECHBRAIN_CACHE_DIR=/data/model_cache/speechbrain
+ENV MODELSCOPE_CACHE=/data/model_cache/modelscope
+ENV HF_HOME=/data/model_cache/huggingface
 
 # ── Application code (last — code changes don't bust model cache) ────────────
 COPY . .
 
-CMD ["python", "worker.py"]
+# Entrypoint: seed persistent cache from baked models, then run worker
+CMD ["sh", "-c", "cp -rn /app/model_cache/* /data/model_cache/ 2>/dev/null || true; exec python worker.py"]

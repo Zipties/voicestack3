@@ -47,6 +47,9 @@ def get_pipeline_settings() -> dict:
             "emotion": settings.get("pipeline_emotion", True),
             "speaker_matching": settings.get("pipeline_speaker_matching", True),
             "auto_summary": settings.get("auto_summary", "off"),
+            "whisper_model": settings.get("whisper_model", "large-v3"),
+            "whisper_prompt": settings.get("whisper_prompt", ""),
+            "whisper_persistent": settings.get("whisper_persistent", True),
         }
     except Exception as e:
         print(f"[pipeline] Could not fetch settings, using defaults: {e}", flush=True)
@@ -54,6 +57,13 @@ def get_pipeline_settings() -> dict:
             "alignment": True, "diarization": True,
             "emotion": True, "speaker_matching": True,
             "auto_summary": "off",
+            "whisper_model": os.getenv("WHISPER_MODEL", "large-v3"),
+            "whisper_prompt": os.getenv(
+                "WHISPER_INITIAL_PROMPT",
+                "Natural conversational English with proper punctuation, "
+                "including question marks, commas, and periods."
+            ),
+            "whisper_persistent": True,
         }
 
 
@@ -84,7 +94,9 @@ def run_gpu_pipeline(job_id: str, input_path: str, tx_result: dict | None = None
               f"diarization={pipe_settings['diarization']} "
               f"emotion={pipe_settings['emotion']} "
               f"speakers={pipe_settings['speaker_matching']} "
-              f"auto_summary={pipe_settings['auto_summary']}", flush=True)
+              f"auto_summary={pipe_settings['auto_summary']} "
+              f"whisper_model={pipe_settings['whisper_model']} "
+              f"whisper_persistent={pipe_settings['whisper_persistent']}", flush=True)
 
         # ── Stage 1: Audio Processing (5%) ──────────────────────
         update_job(db, job_id, status="PROCESSING", progress=5,
@@ -116,12 +128,21 @@ def run_gpu_pipeline(job_id: str, input_path: str, tx_result: dict | None = None
                 segments = tx_result["segments"]
                 language = tx_result["language"]
         else:
-            # Full pipeline mode - load whisperx in this subprocess
+            # Full pipeline mode (one-shot) - load whisperx in this subprocess
+            # Use settings-based model name and prompt
+            settings_model = pipe_settings.get("whisper_model", "").strip()
+            settings_prompt = pipe_settings.get("whisper_prompt", "").strip()
+
             update_job(db, job_id, progress=15, pipeline_stage="transcription")
-            print("[pipeline] Stage 2-4/9: Transcription + alignment + diarization...", flush=True)
+            print(f"[pipeline] Stage 2-4/9: Transcription + alignment + diarization "
+                  f"(one-shot, model={settings_model or 'default'})...", flush=True)
 
             from pipeline.transcription import transcribe
-            result = transcribe(wav_path, job_id)
+            result = transcribe(
+                wav_path, job_id,
+                model_name=settings_model if settings_model else None,
+                initial_prompt=settings_prompt if settings_prompt else None,
+            )
             segments = result["segments"]
             language = result["language"]
 

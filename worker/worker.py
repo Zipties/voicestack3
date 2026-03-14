@@ -1,12 +1,13 @@
 """VoiceStack3 Worker - WhisperX stays hot, other models unload per job.
 
 Architecture:
-  - WhisperX loaded once at startup (~4 GB VRAM, ~6 GB peak)
-  - Pipeline jobs: transcription in-process, everything else in subprocess
-  - OpenAI + Wyoming compatible transcription endpoints on port 9000
+  - Persistent mode: WhisperX loaded once at startup (~4 GB VRAM, ~6 GB peak)
+  - One-shot mode: No persistent model, each job loads/unloads its own model
+  - Pipeline jobs: transcription in-process (persistent) or subprocess (one-shot)
+  - OpenAI + Wyoming compatible transcription endpoints on port 9000 (persistent only)
   - RQ worker processes pipeline jobs from Redis queue
 
-Port 9000 serves:
+Port 9000 serves (persistent mode only):
   POST /v1/audio/transcriptions  (OpenAI Whisper API compatible)
   Wyoming protocol (TODO: separate port for HA integration)
 """
@@ -16,6 +17,8 @@ import sys
 import json
 import threading
 import tempfile
+import time
+import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -25,6 +28,30 @@ from rq import SimpleWorker, Queue
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 API_PORT = int(os.getenv("WHISPER_API_PORT", "9000"))
+BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
+
+
+def _fetch_persistent_setting() -> bool:
+    """Fetch whisper_persistent from backend settings API with retries.
+
+    Retries 3 times with 5-second delays (backend may not be ready at startup).
+    Falls back to env var / default (True) on failure.
+    """
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(f"{BACKEND_URL}/api/settings")
+            resp = urllib.request.urlopen(req, timeout=5)
+            settings = json.loads(resp.read())
+            return settings.get("whisper_persistent", True)
+        except Exception as e:
+            print(f"[worker] Settings fetch attempt {attempt + 1}/3 failed: {e}", flush=True)
+            if attempt < 2:
+                time.sleep(5)
+
+    # Fall back to env var or default
+    fallback = os.getenv("WHISPER_PERSISTENT", "true").lower() in ("true", "1", "yes")
+    print(f"[worker] Could not reach backend, using fallback persistent={fallback}", flush=True)
+    return fallback
 
 
 def start_transcription_api():
@@ -193,22 +220,34 @@ def cleanup_stale_jobs():
 
 
 def main():
-    # Load WhisperX model into VRAM before anything else
+    # Check persistent mode setting
+    is_persistent = _fetch_persistent_setting()
+    mode_label = "persistent" if is_persistent else "one-shot"
+
     print("=" * 60, flush=True)
     print("VoiceStack3 Worker", flush=True)
-    print("  WhisperX: persistent (stays in VRAM)", flush=True)
-    print("  Other models: per-job subprocess (unload after use)", flush=True)
+    print(f"  WhisperX mode: {mode_label}", flush=True)
+    if is_persistent:
+        print("  WhisperX: persistent (stays in VRAM)", flush=True)
+        print("  Other models: per-job subprocess (unload after use)", flush=True)
+    else:
+        print("  WhisperX: one-shot (load/unload per job in subprocess)", flush=True)
+        print("  All models: per-job subprocess (unload after use)", flush=True)
     print("=" * 60, flush=True)
 
     # Clean up any jobs left in PROCESSING from a previous crash
     cleanup_stale_jobs()
 
-    from whisper_model import warmup
-    warmup()
+    if is_persistent:
+        # Persistent mode: warmup model + start API server
+        from whisper_model import warmup
+        warmup()
 
-    # Start transcription API server in background thread
-    api_thread = threading.Thread(target=start_transcription_api, daemon=True)
-    api_thread.start()
+        # Start transcription API server in background thread
+        api_thread = threading.Thread(target=start_transcription_api, daemon=True)
+        api_thread.start()
+    else:
+        print("[worker] One-shot mode: skipping model warmup and API server", flush=True)
 
     # Start RQ worker for pipeline jobs
     conn = Redis.from_url(REDIS_URL)
