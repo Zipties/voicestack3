@@ -226,10 +226,12 @@ export function Recorder({ onRecordingComplete, onClose }: RecorderProps) {
       const constraints: MediaStreamConstraints = {
         audio: {
           deviceId: deviceId ? { exact: deviceId } : undefined,
-          // Disable browser DSP - these cause artifacts and fight with server-side normalization
+          // Disable echo cancellation and noise suppression (cause artifacts,
+          // server-side pipeline handles normalization). Keep AGC enabled so
+          // recordings have usable levels across different mics/devices.
           echoCancellation: false,
           noiseSuppression: false,
-          autoGainControl: false,
+          autoGainControl: true,
           sampleRate: 48000,
           channelCount: 1,
         },

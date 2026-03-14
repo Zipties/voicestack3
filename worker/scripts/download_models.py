@@ -35,18 +35,20 @@ def main():
 
     # ── pyannote speaker-diarization-3.1 (gated) ────────────────────────────
     if hf_token:
-        print("==> Downloading pyannote/speaker-diarization-3.1...")
-        from pyannote.audio import Pipeline
-        # Don't pass cache_dir — let it use HF_HOME so runtime finds the
-        # models in the same location (whisperx doesn't pass cache_dir).
-        pipeline = Pipeline.from_pretrained(
+        from huggingface_hub import snapshot_download
+
+        # Download the pipeline config + all sub-models it references.
+        # Must use snapshot_download for each repo so they land in HF_HOME
+        # cache — Pipeline.from_pretrained only fetches the config yaml and
+        # sub-model weights are lazy-loaded at runtime (fails offline).
+        for repo in [
             "pyannote/speaker-diarization-3.1",
-            use_auth_token=hf_token,
-        )
-        # Force download of sub-models (segmentation + embedding) by sending
-        # pipeline to CPU — from_pretrained alone only fetches the config.
-        pipeline.to(torch.device("cpu"))
-        print("    done.")
+            "pyannote/segmentation-3.0",
+            "pyannote/wespeaker-voxceleb-resnet34-LM",
+        ]:
+            print(f"==> Downloading {repo}...")
+            snapshot_download(repo, token=hf_token)
+            print("    done.")
     else:
         print("WARNING: HF_TOKEN not set — skipping pyannote download.")
         print("         Speaker diarization will be disabled at runtime.")
