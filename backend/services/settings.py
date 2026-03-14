@@ -29,7 +29,7 @@ DEFAULTS = {
     "embed_url": "",
     "embed_api_key": "",
     "file_watcher_enabled": False,
-    "file_watcher_path": "",
+    "file_watcher_path": "/data/watch",
     "file_watcher_extensions": ".m4a,.mp3,.wav,.ogg,.flac,.opus,.mp4,.webm",
     "file_watcher_min_size_kb": 10,
     "file_watcher_cooldown_seconds": 120,
