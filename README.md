@@ -32,7 +32,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-The default `.env.example` is pre-configured for CPU mode. Open [http://localhost:3000](http://localhost:3000).
+The default `.env.example` is pre-configured for CPU mode. First run pulls ~8GB of images (ML models are bundled) — this takes a few minutes depending on your connection. Once pulled, open [http://localhost:3000](http://localhost:3000).
 
 Processing speed: ~2-3x audio length (a 5 min recording takes ~10-15 min).
 

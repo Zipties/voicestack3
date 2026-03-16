@@ -1,7 +1,5 @@
 FROM python:3.11-slim
 
-RUN pip install --no-cache-dir websockets
-
 COPY openclaw-proxy.py /app/openclaw-proxy.py
 
 EXPOSE 8100

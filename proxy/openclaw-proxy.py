@@ -1,171 +1,131 @@
 #!/usr/bin/env python3
-"""HTTP proxy for OpenClaw gateway — pure Python, no CLI dependency.
+"""HTTP proxy for OpenClaw gateway — pure Python, no external dependencies.
 
-Connects to the OpenClaw gateway over WSS and exposes simple REST endpoints
-that the VoiceStack3 backend calls.
+Connects to the OpenClaw gateway via its OpenAI-compatible HTTP API
+(/v1/chat/completions) and exposes simple REST endpoints that the
+VoiceStack3 backend calls.
 
 Config via environment variables:
-  OPENCLAW_GATEWAY_URL   — WSS URL of the gateway (e.g. wss://your-gateway.example.com)
+  OPENCLAW_GATEWAY_URL   — Base HTTPS URL of the gateway (e.g. https://chad.mcd.so)
   OPENCLAW_GATEWAY_TOKEN — Authentication token for the gateway
   PROXY_PORT             — HTTP listen port (default: 8100)
+  SUMMARY_AGENT          — Agent ID for summaries (default: vs3-summarizer)
+  CHAT_AGENT             — Agent ID for chat (default: vs3-chat)
 """
 
 import json
 import os
-import time
+import ssl
 import traceback
 import uuid
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 
-try:
-    from websockets.sync.client import connect as ws_connect
-except ImportError:
-    import subprocess, sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "websockets"])
-    from websockets.sync.client import connect as ws_connect
-
-GATEWAY_URL = os.getenv("OPENCLAW_GATEWAY_URL", "")
+GATEWAY_URL = os.getenv("OPENCLAW_GATEWAY_URL", "").rstrip("/")
 GATEWAY_TOKEN = os.getenv("OPENCLAW_GATEWAY_TOKEN", "")
 PROXY_PORT = int(os.getenv("PROXY_PORT", "8100"))
+SUMMARY_AGENT = os.getenv("SUMMARY_AGENT", "vs3-summarizer")
+CHAT_AGENT = os.getenv("CHAT_AGENT", "vs3-chat")
 DEFAULT_TIMEOUT = 120
 
+# Allow self-signed certs for LAN gateway access
+_ssl_ctx = ssl.create_default_context()
+_ssl_ctx.check_hostname = False
+_ssl_ctx.verify_mode = ssl.CERT_NONE
 
-def _connect_and_auth():
-    """Open WSS connection and authenticate. Returns open websocket (caller must close)."""
-    if not GATEWAY_URL or not GATEWAY_TOKEN:
-        raise RuntimeError("OPENCLAW_GATEWAY_URL and OPENCLAW_GATEWAY_TOKEN must be set")
 
-    ws = ws_connect(GATEWAY_URL, ping_interval=None, close_timeout=5)
+def _gateway_api_url() -> str:
+    """Resolve the HTTP API base URL from the configured gateway URL."""
+    url = GATEWAY_URL
+    if not url:
+        raise RuntimeError("OPENCLAW_GATEWAY_URL not set")
+    # Convert wss:// to https:// if user still has the WSS URL configured
+    if url.startswith("wss://"):
+        url = "https://" + url[6:]
+    elif url.startswith("ws://"):
+        url = "http://" + url[5:]
+    return url
+
+
+def _chat_completions(model: str, messages: list[dict], timeout: int = DEFAULT_TIMEOUT) -> dict:
+    """Call the OpenAI-compatible chat completions endpoint."""
+    api_url = f"{_gateway_api_url()}/v1/chat/completions"
+    body = json.dumps({
+        "model": model,
+        "messages": messages,
+    }).encode()
+
+    req = Request(api_url, data=body, method="POST")
+    req.add_header("Authorization", f"Bearer {GATEWAY_TOKEN}")
+    req.add_header("Content-Type", "application/json")
+
     try:
-        msg = json.loads(ws.recv(timeout=10))
-        if msg.get("event") != "connect.challenge":
-            raise RuntimeError(f"Expected connect.challenge, got: {msg}")
-
-        ws.send(json.dumps({
-            "type": "req",
-            "id": str(uuid.uuid4()),
-            "method": "connect",
-            "params": {
-                "minProtocol": 3,
-                "maxProtocol": 3,
-                "client": {
-                    "id": "gateway-client",
-                    "version": "1.0.0",
-                    "platform": "linux",
-                    "mode": "backend"
-                },
-                "auth": {"token": GATEWAY_TOKEN},
-                "role": "operator",
-                "scopes": ["operator.read", "operator.write", "operator.admin"]
-            }
-        }))
-
-        resp = json.loads(ws.recv(timeout=15))
-        if not resp.get("ok"):
-            error = resp.get("error", {})
-            raise RuntimeError(f"Gateway auth failed: {error.get('message', error)}")
-
-        return ws
-    except Exception:
-        ws.close()
-        raise
-
-
-def _send_and_wait(ws, method: str, params: dict, timeout: float = 30):
-    """Send a request and wait for the response. Returns payload."""
-    req_id = str(uuid.uuid4())
-    ws.send(json.dumps({
-        "type": "req",
-        "id": req_id,
-        "method": method,
-        "params": params
-    }))
-
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        remaining = deadline - time.time()
-        if remaining <= 0:
-            break
-        try:
-            raw = ws.recv(timeout=min(remaining, 5))
-            msg = json.loads(raw)
-            if msg.get("type") == "res" and msg.get("id") == req_id:
-                if not msg.get("ok"):
-                    error = msg.get("error", {})
-                    raise RuntimeError(error.get("message", str(error)))
-                return msg.get("payload", {})
-        except TimeoutError:
-            continue
-
-    raise TimeoutError(f"Gateway request '{method}' timed out after {timeout}s")
+        with urlopen(req, timeout=timeout, context=_ssl_ctx) as resp:
+            return json.loads(resp.read())
+    except HTTPError as e:
+        error_body = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Gateway HTTP {e.code}: {error_body}") from e
+    except URLError as e:
+        raise RuntimeError(f"Gateway connection error: {e.reason}") from e
 
 
 def list_agents() -> list[dict]:
-    """Fetch agents from the gateway."""
-    ws = _connect_and_auth()
-    try:
-        payload = _send_and_wait(ws, "agents.list", {})
-    finally:
-        ws.close()
-
+    """Return configured agents (no gateway call needed)."""
     agents = []
-    for a in payload.get("agents", []):
-        identity = a.get("identity", {})
+    for agent_id, description in [
+        (SUMMARY_AGENT, "Summarize and tag transcriptions"),
+        (CHAT_AGENT, "Chat about transcriptions"),
+    ]:
         agents.append({
-            "id": a["id"],
-            "name": identity.get("name") or a.get("name", a["id"].replace("-", " ").title()),
-            "description": f"OpenClaw agent: {a['id']}",
+            "id": agent_id,
+            "name": agent_id.replace("-", " ").title(),
+            "description": description,
             "model": "unknown",
         })
     return agents
 
 
 def send_to_agent(agent_id: str, message: str, timeout: int, session_id: str = None) -> dict:
-    """Send a message to an agent via chat.send and wait for the streaming response."""
-    session_key = session_id or f"agent:{agent_id}:api:{uuid.uuid4()}"
+    """Send a message to an agent via the chat completions API."""
+    messages = [{"role": "user", "content": message}]
 
-    ws = _connect_and_auth()
+    result = _chat_completions(model=agent_id, messages=messages, timeout=timeout)
+
+    # Extract the response text from the OpenAI-compatible response
+    choices = result.get("choices", [])
+    text = ""
+    if choices:
+        text = choices[0].get("message", {}).get("content", "")
+
+    return {
+        "text": text,
+        "meta": {
+            "model": result.get("model", agent_id),
+            "id": result.get("id", ""),
+        },
+    }
+
+
+def test_connection() -> dict:
+    """Quick connectivity test — send a minimal request to the gateway."""
     try:
-        payload = _send_and_wait(ws, "chat.send", {
-            "message": message,
-            "sessionKey": session_key,
-            "idempotencyKey": str(uuid.uuid4()),
-        }, timeout=timeout)
-
-        run_id = payload.get("runId")
-        if not run_id:
-            return {"text": str(payload), "meta": {}}
-
-        text_parts = []
-        final_session_key = session_key
-        deadline = time.time() + timeout
-
-        while time.time() < deadline:
-            remaining = deadline - time.time()
-            try:
-                raw = ws.recv(timeout=min(remaining, 5))
-                msg = json.loads(raw)
-                if msg.get("type") == "event" and msg.get("event") == "chat":
-                    p = msg.get("payload", {})
-                    if p.get("sessionKey") == session_key:
-                        # Text is in message.content[].text
-                        content = p.get("message", {}).get("content", [])
-                        for block in content:
-                            if block.get("type") == "text" and block.get("text"):
-                                text_parts.append(block["text"])
-                        if "sessionKey" in p:
-                            final_session_key = p["sessionKey"]
-                        if p.get("state") in ("final", "error", "aborted"):
-                            break
-            except TimeoutError:
-                continue
-
+        result = _chat_completions(
+            model=SUMMARY_AGENT,
+            messages=[{"role": "user", "content": "ping"}],
+            timeout=15,
+        )
         return {
-            "text": text_parts[-1] if text_parts else "",
-            "meta": {"runId": run_id, "sessionId": final_session_key}
+            "status": "ok",
+            "gateway": GATEWAY_URL,
+            "model": result.get("model", "unknown"),
         }
-    finally:
-        ws.close()
+    except Exception as e:
+        return {
+            "status": "error",
+            "gateway": GATEWAY_URL,
+            "error": str(e),
+        }
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -179,6 +139,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._json_response(503, {"error": str(e)})
         elif self.path == "/health":
             self._json_response(200, {"status": "ok", "gateway": GATEWAY_URL or "not configured"})
+        elif self.path == "/test":
+            result = test_connection()
+            status = 200 if result.get("status") == "ok" else 503
+            self._json_response(status, result)
         else:
             self.send_error(404)
 
@@ -213,7 +177,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
-        self.wfile.write(json.dumps(data).encode())
+        try:
+            self.wfile.write(json.dumps(data).encode())
+        except BrokenPipeError:
+            pass
 
     def log_message(self, format, *args):
         print(f"[openclaw-proxy] {args[0]}")
@@ -229,4 +196,6 @@ if __name__ == "__main__":
     print(f"[openclaw-proxy] Listening on :{PROXY_PORT}")
     if GATEWAY_URL:
         print(f"[openclaw-proxy] Gateway: {GATEWAY_URL}")
+    print(f"[openclaw-proxy] Agents: {SUMMARY_AGENT}, {CHAT_AGENT}")
+    print(f"[openclaw-proxy] Mode: HTTP API (v1/chat/completions)")
     server.serve_forever()
