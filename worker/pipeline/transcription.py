@@ -11,6 +11,31 @@ import os
 import gc
 
 
+def _get_dynamic_batch_size(max_batch: int = 16) -> int:
+    """Compute batch size based on available VRAM to prevent OOM."""
+    try:
+        import torch
+        if not torch.cuda.is_available():
+            return max_batch
+        free_bytes, _ = torch.cuda.mem_get_info()
+        free_gb = free_bytes / (1024 ** 3)
+        if free_gb >= 18:
+            bs = max_batch
+        elif free_gb >= 14:
+            bs = min(max_batch, 12)
+        elif free_gb >= 10:
+            bs = min(max_batch, 8)
+        elif free_gb >= 6:
+            bs = min(max_batch, 4)
+        else:
+            bs = 2
+        print(f"[WhisperX] Dynamic batch size: {bs} (free VRAM: {free_gb:.1f}GB)", flush=True)
+        return bs
+    except Exception:
+        return max_batch
+
+
+
 def transcribe_only(audio_path: str) -> dict:
     """Run transcription using the persistent WhisperX model.
 
@@ -174,7 +199,20 @@ def transcribe(
         download_root=download_root,
     )
     audio = whisperx.load_audio(audio_path)
-    result = model.transcribe(audio, batch_size=batch_size, language=language)
+    effective_batch = _get_dynamic_batch_size(batch_size)
+    try:
+        result = model.transcribe(audio, batch_size=effective_batch, language=language)
+    except RuntimeError as e:
+        if "out of memory" in str(e).lower():
+            import torch
+            retry_batch = max(1, effective_batch // 2)
+            print(f"[WhisperX] CUDA OOM with batch_size={effective_batch}, "
+                  f"retrying with batch_size={retry_batch}...", flush=True)
+            torch.cuda.empty_cache()
+            gc.collect()
+            result = model.transcribe(audio, batch_size=retry_batch, language=language)
+        else:
+            raise
     language = result.get("language", "en")
     print(f"[WhisperX] Transcription complete. Language: {language}, Segments: {len(result['segments'])}")
 

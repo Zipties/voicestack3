@@ -77,6 +77,42 @@ INITIAL_PROMPT = os.getenv(
 CACHE_DIR = os.getenv("WHISPER_CACHE_DIR", "/data/model_cache/whisper")
 IDLE_TIMEOUT = int(os.getenv("WHISPER_IDLE_TIMEOUT", "1800"))  # 30 min default
 
+def _get_dynamic_batch_size(max_batch: int | None = None) -> int:
+    """Compute batch size based on available VRAM.
+
+    Prevents OOM when other GPU workloads (CLAP, winded-stt, etc.)
+    are consuming VRAM alongside WhisperX.
+
+    Thresholds (free VRAM → batch size):
+      18+ GB → max_batch (default 16)
+      14+ GB → 12
+      10+ GB → 8
+       6+ GB → 4
+      <6 GB  → 2
+    """
+    cap = max_batch or BATCH_SIZE
+    if not torch.cuda.is_available():
+        return cap
+    try:
+        free_bytes, _ = torch.cuda.mem_get_info()
+        free_gb = free_bytes / (1024 ** 3)
+        if free_gb >= 18:
+            bs = cap
+        elif free_gb >= 14:
+            bs = min(cap, 12)
+        elif free_gb >= 10:
+            bs = min(cap, 8)
+        elif free_gb >= 6:
+            bs = min(cap, 4)
+        else:
+            bs = 2
+        print(f"[whisper] Dynamic batch size: {bs} (free VRAM: {free_gb:.1f}GB)", flush=True)
+        return bs
+    except Exception:
+        return cap
+
+
+
 
 def _fetch_settings() -> dict | None:
     """Fetch settings from backend API with caching. Returns None on failure."""
@@ -323,7 +359,20 @@ def transcribe_audio(
             t_audio_start = time.time()
             audio = whisperx.load_audio(audio_path)
             t_audio_done = time.time()
-            result = model.transcribe(audio, batch_size=BATCH_SIZE, language=lang)
+            effective_batch = _get_dynamic_batch_size()
+            try:
+                result = model.transcribe(audio, batch_size=effective_batch, language=lang)
+            except RuntimeError as e:
+                if "out of memory" in str(e).lower():
+                    # OOM recovery: free cache and retry with halved batch
+                    retry_batch = max(1, effective_batch // 2)
+                    print(f"[whisper] CUDA OOM with batch_size={effective_batch}, "
+                          f"retrying with batch_size={retry_batch}...", flush=True)
+                    torch.cuda.empty_cache()
+                    gc.collect()
+                    result = model.transcribe(audio, batch_size=retry_batch, language=lang)
+                else:
+                    raise
         finally:
             if saved_options is not None:
                 model.options = saved_options
