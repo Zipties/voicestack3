@@ -93,6 +93,7 @@ export interface Transcript {
 export interface ActionItem {
   text: string;
   checked: boolean;
+  assignee?: string | null;
 }
 
 export interface Overview {
@@ -264,6 +265,14 @@ export async function generateOverview(transcriptId: string): Promise<Overview> 
   return res.json();
 }
 
+export async function resummarize(transcriptId: string): Promise<Overview> {
+  const res = await fetch(`${API_URL}/api/transcripts/${transcriptId}/resummarize`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`Failed to resummarize: ${res.status}`);
+  return res.json();
+}
+
 export async function toggleActionItem(
   transcriptId: string,
   itemIndex: number
@@ -288,7 +297,7 @@ export async function updateOverview(
   transcriptId: string,
   data: {
     summary?: string;
-    action_items?: { text: string; checked: boolean }[];
+    action_items?: { text: string; checked: boolean; assignee?: string | null }[];
     outline?: { heading: string; content: string }[];
   }
 ): Promise<Overview> {

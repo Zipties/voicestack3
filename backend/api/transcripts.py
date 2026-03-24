@@ -277,8 +277,13 @@ async def generate_transcript_overview(transcript_id: str, bg: BackgroundTasks, 
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
-    # Store with checked state on each action item
-    action_items = [{"text": item, "checked": False} for item in overview["action_items"]]
+    # Store with checked state on each action item (action_items already normalized to objects by llm.py)
+    action_items = [
+        {"text": item.get("text", item) if isinstance(item, dict) else item,
+         "assignee": item.get("assignee") if isinstance(item, dict) else None,
+         "checked": False}
+        for item in overview["action_items"]
+    ]
     transcript.title = overview["title"]
     transcript.summary = json.dumps({
         "text": overview["summary"],
@@ -308,6 +313,81 @@ async def generate_transcript_overview(transcript_id: str, bg: BackgroundTasks, 
     return overview
 
 
+@router.post("/{transcript_id}/resummarize")
+async def resummarize_transcript(transcript_id: str, bg: BackgroundTasks, db: Session = Depends(get_db)):
+    """Delete vectors, clear summary, and regenerate overview.
+
+    For testing prompt changes without reprocessing audio.
+    """
+    from services.qdrant import delete_transcript_points
+
+    transcript = (
+        db.query(Transcript)
+        .filter(Transcript.id == uuid.UUID(transcript_id))
+        .options(
+            joinedload(Transcript.segments).joinedload(Segment.speaker),
+            joinedload(Transcript.tags),
+        )
+        .first()
+    )
+    if not transcript:
+        raise HTTPException(status_code=404, detail="Transcript not found")
+
+    if not transcript.segments:
+        raise HTTPException(status_code=400, detail="Transcript has no segments")
+
+    # 1. Delete existing vectors
+    await delete_transcript_points(transcript_id)
+
+    # 2. Clear existing summary
+    transcript.summary = None
+    # Delete LLM-generated tags (preserve manual)
+    for tag in list(transcript.tags):
+        if tag.source != "manual":
+            db.delete(tag)
+    db.flush()
+
+    # 3. Regenerate overview
+    attributed_text = _build_attributed_text(transcript)
+    recorded_at = None
+    if transcript.created_at:
+        recorded_at = transcript.created_at.strftime("%Y-%m-%d")
+
+    try:
+        overview = await generate_overview(attributed_text, recorded_at=recorded_at)
+    except RuntimeError as e:
+        db.commit()
+        raise HTTPException(status_code=503, detail=str(e))
+
+    # 4. Store new results
+    action_items = [
+        {"text": item.get("text", item) if isinstance(item, dict) else item,
+         "assignee": item.get("assignee") if isinstance(item, dict) else None,
+         "checked": False}
+        for item in overview["action_items"]
+    ]
+    transcript.title = overview["title"]
+    transcript.summary = json.dumps({
+        "text": overview["summary"],
+        "action_items": action_items,
+        "outline": overview["outline"],
+    })
+
+    # Add new LLM tags
+    manual_set = {t.tag.lower() for t in transcript.tags if t.source == "manual"}
+    for tag_text in overview.get("tags", []):
+        if tag_text.lower() not in manual_set:
+            db.add(Tag(transcript_id=transcript.id, tag=tag_text, source="llm"))
+
+    db.commit()
+
+    # 5. Reindex with fresh vectors
+    bg.add_task(reindex_transcript, transcript_id)
+
+    overview["action_items"] = action_items
+    return overview
+
+
 @router.patch("/{transcript_id}/action-items/{item_index}")
 async def toggle_action_item(
     transcript_id: str,
@@ -328,7 +408,7 @@ async def toggle_action_item(
     # Handle both old format (string) and new format (object with checked)
     item = items[item_index]
     if isinstance(item, str):
-        items[item_index] = {"text": item, "checked": True}
+        items[item_index] = {"text": item, "checked": True, "assignee": None}
     else:
         items[item_index]["checked"] = not item.get("checked", False)
 
@@ -342,6 +422,7 @@ async def toggle_action_item(
 class ActionItemUpdate(BaseModel):
     text: str
     checked: bool = False
+    assignee: str | None = None
 
 
 class OutlineItemUpdate(BaseModel):
@@ -437,7 +518,9 @@ async def chat_about_transcript(
                 for item in items:
                     text_val = item["text"] if isinstance(item, dict) else item
                     checked = item.get("checked", False) if isinstance(item, dict) else False
-                    item_lines.append(f"  [{'x' if checked else ' '}] {text_val}")
+                    assignee = item.get("assignee") if isinstance(item, dict) else None
+                    assignee_tag = f" @{assignee}" if assignee else ""
+                    item_lines.append(f"  [{'x' if checked else ' '}] {text_val}{assignee_tag}")
                 parts.append("Action Items:\n" + "\n".join(item_lines))
             outline = summary_data.get("outline", [])
             if outline:

@@ -53,7 +53,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload --timeout-graceful-shutdown 5
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--timeout-graceful-shutdown", "5"]
 
   worker:
     build:
@@ -88,7 +88,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: python worker.py
+    command: ["python", "worker.py"]
 
   frontend:
     build:
@@ -102,7 +102,7 @@ services:
       - /app/node_modules
     depends_on:
       - backend
-    command: npm run dev
+    command: ["npm", "run", "dev"]
 
 
   openclaw-proxy:

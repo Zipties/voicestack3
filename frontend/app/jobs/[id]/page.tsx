@@ -23,6 +23,7 @@ import {
   fetchTranscriptByJob,
   subscribeToProgress,
   generateOverview,
+  resummarize,
   toggleActionItem,
   updateOverview,
   fetchIndexStatus,
@@ -44,6 +45,7 @@ import { EmotionBadge } from "@/components/emotion-badge";
 import { SpeakerLabel } from "@/components/speaker-label";
 import { ChatSidebar } from "@/components/chat-sidebar";
 import { LogsPanel } from "@/components/logs-panel";
+import { AssigneePicker } from "@/components/assignee-picker";
 
 type Tab = "transcript" | "summary";
 
@@ -234,6 +236,7 @@ export default function JobDetailPage() {
     }
   };
 
+  const [resummarizing, setResummarizing] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -248,6 +251,19 @@ export default function JobDetailPage() {
       console.error("Failed to delete:", err);
       setDeleting(false);
       setConfirmDelete(false);
+    }
+  };
+
+  const handleResummarize = async () => {
+    if (!transcript) return;
+    setResummarizing(true);
+    try {
+      const result = await resummarize(transcript.id);
+      setOverview(result);
+    } catch (err) {
+      console.error("Failed to resummarize:", err);
+    } finally {
+      setResummarizing(false);
     }
   };
 
@@ -382,6 +398,19 @@ export default function JobDetailPage() {
       </div>
     );
   }
+
+  const transcriptSpeakers = (() => {
+    if (!transcript) return [];
+    const seen = new Map<string, typeof transcript.segments[0]["speaker"]>();
+    for (const seg of transcript.segments) {
+      if (seg.speaker && !seen.has(seg.speaker.id)) {
+        seen.set(seg.speaker.id, seg.speaker);
+      }
+    }
+    return Array.from(seen.values()).filter(Boolean) as {
+      id: string; name: string; avatar_id: number | null; custom_avatar: string | null;
+    }[];
+  })();
 
   const title =
     overview?.title || transcript!.title || job.asset?.filename || "Untitled Recording";
@@ -543,6 +572,9 @@ export default function JobDetailPage() {
                 onGenerate={handleGenerateOverview}
                 transcriptId={transcript!.id}
                 onOverviewUpdate={setOverview}
+                resummarizing={resummarizing}
+                onResummarize={handleResummarize}
+                speakers={transcriptSpeakers}
               />
             )}
           </div>
@@ -665,12 +697,18 @@ function SummaryTab({
   onGenerate,
   transcriptId,
   onOverviewUpdate,
+  resummarizing,
+  onResummarize,
+  speakers,
 }: {
   overview: Overview | null;
   generating: boolean;
   onGenerate: () => void;
   transcriptId: string | null;
   onOverviewUpdate: (overview: Overview) => void;
+  resummarizing: boolean;
+  onResummarize: () => void;
+  speakers: { id: string; name: string; avatar_id: number | null; custom_avatar: string | null }[];
 }) {
   if (!overview && !generating) {
     return (
@@ -696,7 +734,7 @@ function SummaryTab({
 
   const [editing, setEditing] = useState(false);
   const [editSummary, setEditSummary] = useState("");
-  const [editItems, setEditItems] = useState<{ text: string; checked: boolean }[]>([]);
+  const [editItems, setEditItems] = useState<{ text: string; checked: boolean; assignee?: string | null }[]>([]);
   const [editOutline, setEditOutline] = useState<{ heading: string; content: string }[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -705,7 +743,9 @@ function SummaryTab({
     setEditSummary(overview.summary || "");
     setEditItems(
       overview.action_items.map((item) =>
-        typeof item === "string" ? { text: item, checked: false } : { text: item.text, checked: item.checked }
+        typeof item === "string"
+          ? { text: item, checked: false, assignee: null }
+          : { text: item.text, checked: item.checked, assignee: item.assignee || null }
       )
     );
     setEditOutline(overview.outline.map((o) => ({ heading: o.heading, content: o.content })));
@@ -752,13 +792,24 @@ function SummaryTab({
             </button>
           </div>
         ) : (
-          <button
-            onClick={startEditing}
-            className="px-3 py-1 text-xs text-vs-text-muted hover:text-vs-text-secondary rounded hover:bg-vs-hover transition-colors flex items-center gap-1.5"
-          >
-            <Pencil className="w-3 h-3" />
-            Edit
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onResummarize}
+              disabled={resummarizing}
+              className="px-3 py-1 text-xs text-vs-text-muted hover:text-vs-text-accent rounded hover:bg-vs-hover transition-colors flex items-center gap-1.5"
+              title="Delete vectors and regenerate summary from scratch"
+            >
+              {resummarizing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+              Resummarize
+            </button>
+            <button
+              onClick={startEditing}
+              className="px-3 py-1 text-xs text-vs-text-muted hover:text-vs-text-secondary rounded hover:bg-vs-hover transition-colors flex items-center gap-1.5"
+            >
+              <Pencil className="w-3 h-3" />
+              Edit
+            </button>
+          </div>
         )}
       </div>
 
@@ -812,6 +863,17 @@ function SummaryTab({
                     }}
                     className="input flex-1 text-sm"
                   />
+                  <input
+                    type="text"
+                    value={item.assignee || ""}
+                    onChange={(e) => {
+                      const next = [...editItems];
+                      next[i] = { ...next[i], assignee: e.target.value || null };
+                      setEditItems(next);
+                    }}
+                    placeholder="Assignee"
+                    className="input w-28 text-sm text-vs-text-secondary"
+                  />
                   <button
                     onClick={() => setEditItems(editItems.filter((_, j) => j !== i))}
                     className="p-1 text-vs-text-muted hover:text-status-failed transition-colors shrink-0 mt-0.5"
@@ -821,7 +883,7 @@ function SummaryTab({
                 </div>
               ))}
               <button
-                onClick={() => setEditItems([...editItems, { text: "", checked: false }])}
+                onClick={() => setEditItems([...editItems, { text: "", checked: false, assignee: null }])}
                 className="flex items-center gap-1.5 text-xs text-vs-text-muted hover:text-vs-text-accent transition-colors mt-1"
               >
                 <Plus className="w-3 h-3" />
@@ -833,6 +895,7 @@ function SummaryTab({
               {overview!.action_items.map((item, i) => {
                 const text = typeof item === "string" ? item : item.text;
                 const checked = typeof item === "string" ? false : item.checked;
+                const assignee = typeof item === "string" ? null : item.assignee;
                 return (
                   <li key={i} className="flex items-start gap-2 text-sm">
                     <input
@@ -853,7 +916,7 @@ function SummaryTab({
                       className="mt-1 rounded border-vs-border bg-vs-raised cursor-pointer"
                     />
                     <span
-                      className={`${
+                      className={`flex-1 ${
                         checked
                           ? "text-vs-text-muted line-through"
                           : "text-vs-text-primary"
@@ -861,6 +924,30 @@ function SummaryTab({
                     >
                       {text}
                     </span>
+                    <AssigneePicker
+                      assignee={assignee || null}
+                      speakers={speakers}
+                      onChange={async (name) => {
+                        if (!transcriptId || !overview) return;
+                        const updatedItems = overview.action_items.map((it, j) => {
+                          const obj = typeof it === "string" ? { text: it, checked: false, assignee: null } : { ...it };
+                          if (j === i) obj.assignee = name;
+                          return obj;
+                        });
+                        try {
+                          const result = await updateOverview(transcriptId, {
+                            action_items: updatedItems.map((it) => ({
+                              text: typeof it === "string" ? it : it.text,
+                              checked: typeof it === "string" ? false : it.checked,
+                              assignee: typeof it === "string" ? null : it.assignee,
+                            })),
+                          });
+                          onOverviewUpdate(result);
+                        } catch (err) {
+                          console.error("Failed to update assignee:", err);
+                        }
+                      }}
+                    />
                   </li>
                 );
               })}

@@ -202,7 +202,7 @@ def _start_reaper():
     _reaper_started = True
 
     def _reaper_loop():
-        global _model, _last_used
+        global _model, _last_used, _parked_on_cpu, _loaded_model_name
         while True:
             time.sleep(60)  # Check every minute
 
@@ -228,18 +228,17 @@ def _start_reaper():
                 if idle_seconds < IDLE_TIMEOUT:
                     continue
 
-                global _parked_on_cpu
-                if _parked_on_cpu:
-                    continue  # Already offloaded
-
                 print(f"[whisper] Idle for {idle_seconds:.0f}s (timeout: {IDLE_TIMEOUT}s), "
-                      f"offloading model to CPU RAM...", flush=True)
+                      f"fully unloading model to free VRAM...", flush=True)
                 t0 = time.time()
-                _model.model.model.unload_model(to_cpu=True)
-                _parked_on_cpu = True
+                del _model
+                _model = None
+                _parked_on_cpu = False
+                _loaded_model_name = None
+                gc.collect()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-                print(f"[whisper] Model offloaded to CPU in {time.time()-t0:.1f}s. VRAM freed.", flush=True)
+                print(f"[whisper] Model fully unloaded in {time.time()-t0:.1f}s. VRAM freed.", flush=True)
             finally:
                 _model_lock.release()
 
@@ -257,15 +256,6 @@ def _ensure_model():
     if _model is not None and _loaded_model_name != desired_model:
         print(f"[whisper] Model switch detected: {_loaded_model_name} -> {desired_model}", flush=True)
         reload_model(desired_model)
-        return _model
-
-    if _model is not None and _parked_on_cpu:
-        t0 = time.time()
-        print(f"[whisper] Resuming model from CPU RAM...", flush=True)
-        _model.model.model.load_model()
-        _parked_on_cpu = False
-        _last_used = time.time()
-        print(f"[whisper] Model resumed in {time.time()-t0:.1f}s.", flush=True)
         return _model
 
     if _model is not None:

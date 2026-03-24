@@ -37,7 +37,10 @@ Analyze this transcript and return a JSON object with these fields:
    - People mentioned by name
    - Emotional tags if prominent (e.g., "funny", "emotional", "frustrated")
 
-4. **action_items**: Array of strings for any tasks or follow-ups explicitly mentioned.
+4. **action_items**: Array of objects with "text" and "assignee" keys for any tasks or follow-ups explicitly mentioned.
+   - "text": The action item description
+   - "assignee": The speaker name from the transcript who is responsible, or null if unclear
+   Assign action items to speakers when the transcript makes it clear who should do it (e.g., "I'll handle that" or "Can you look into X?"). Leave assignee null when responsibility is ambiguous.
    Return an EMPTY array if the content has no real action items (most recordings won't).
 
 5. **outline**: Array of objects with "heading" and "content" keys summarizing the structure.
@@ -126,11 +129,25 @@ def _parse_llm_response(payload_text: str) -> dict:
     # Normalize tags to lowercase
     tags = [t.lower().strip() for t in result.get("tags", []) if t.strip()]
 
+    # Normalize action items to object format with assignee
+    raw_items = result.get("action_items", [])
+    action_items = []
+    for item in raw_items:
+        if isinstance(item, str):
+            action_items.append({"text": item, "assignee": None})
+        elif isinstance(item, dict):
+            action_items.append({
+                "text": item.get("text", str(item)),
+                "assignee": item.get("assignee") or None,
+            })
+        else:
+            action_items.append({"text": str(item), "assignee": None})
+
     return {
         "title": result.get("title", "Voice Note: Untitled"),
         "summary": result.get("summary", ""),
         "tags": tags,
-        "action_items": result.get("action_items", []),
+        "action_items": action_items,
         "outline": outline,
     }
 
