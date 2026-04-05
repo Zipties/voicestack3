@@ -1,33 +1,9 @@
 services:
   db:
     image: docker.io/pgvector/pgvector:pg16
-    restart: always
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-voice}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-voice}
-      POSTGRES_DB: ${POSTGRES_DB:-voice}
-    volumes:
-      - db_data:/var/lib/postgresql/data
-      - ./migrations:/docker-entrypoint-initdb.d:ro
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U voice"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 15s
 
   redis:
     image: docker.io/redis:7-alpine
-    restart: always
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
 
   backend:
     build:
