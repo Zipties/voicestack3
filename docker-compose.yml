@@ -16,7 +16,7 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U voice"]
+      test: ["CMD", "pg_isready", "-U", "voice"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -50,6 +50,12 @@ services:
     volumes:
       - data:/data
       - ~/VoiceStack Dropbox:/data/watch
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     depends_on:
       db:
         condition: service_healthy
@@ -70,16 +76,23 @@ services:
       WHISPER_BEAM_SIZE: ${WHISPER_BEAM_SIZE:-8}
       WHISPER_API_PORT: ${WHISPER_API_PORT:-9000}
       SPEAKER_MATCH_THRESHOLD: ${SPEAKER_MATCH_THRESHOLD:-0.45}
-      WHISPER_IDLE_TIMEOUT: ${WHISPER_IDLE_TIMEOUT:-1800}
       PYTORCH_CUDA_ALLOC_CONF: max_split_size_mb:512
       HF_HUB_OFFLINE: "0"
       TRANSFORMERS_OFFLINE: "0"
     volumes:
       - data:/data
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     depends_on:
       db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      backend:
         condition: service_healthy
 
   frontend:
@@ -88,11 +101,14 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
   openclaw-proxy:
     image: ghcr.io/zipties/voicestack3-proxy:latest
     restart: always
+    volumes:
+      - ./proxy/openclaw-proxy.py:/app/openclaw-proxy.py:ro
     environment:
       PROXY_PORT: "8100"
       HOME: /openclaw
