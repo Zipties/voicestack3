@@ -51,13 +51,15 @@ def _gateway_api_url() -> str:
 def _chat_completions(model: str, messages: list[dict], timeout: int = DEFAULT_TIMEOUT) -> dict:
     """Call the OpenAI-compatible chat completions endpoint."""
     api_url = f"{_gateway_api_url()}/v1/chat/completions"
+    model_id = model if model.startswith("openclaw/") or model == "openclaw" else f"openclaw/{model}"
     body = json.dumps({
-        "model": model,
+        "model": model_id,
         "messages": messages,
     }).encode()
 
     req = Request(api_url, data=body, method="POST")
     req.add_header("Authorization", f"Bearer {GATEWAY_TOKEN}")
+    req.add_header("x-openclaw-scopes", "operator.read,operator.write")
     req.add_header("Content-Type", "application/json")
 
     try:
