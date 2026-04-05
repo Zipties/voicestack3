@@ -220,6 +220,19 @@ def run_gpu_pipeline(job_id: str, input_path: str, tx_result: dict | None = None
 
         print(f"[pipeline] Job {job_id} COMPLETED in subprocess", flush=True)
 
+        # Clean up large video source files now that job succeeded.
+        # Audio inputs are kept (small). This is safe because the opus archive
+        # and playback m4a have already been created.
+        from pipeline.audio import has_video_stream
+        from pathlib import Path
+        try:
+            if has_video_stream(input_path):
+                input_size = Path(input_path).stat().st_size
+                Path(input_path).unlink()
+                print(f"[pipeline] Deleted video source ({input_size / 1048576:.1f} MB): {input_path}", flush=True)
+        except OSError:
+            pass
+
         # Fire-and-forget: index transcript for semantic search
         def _ingest():
             try:

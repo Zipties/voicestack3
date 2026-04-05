@@ -33,7 +33,12 @@ def get_audio_info(file_path: str) -> dict:
 
 
 def has_video_stream(file_path: str) -> bool:
-    """Check if a file contains a video stream (i.e., it's a video file)."""
+    """Check if a file contains a real video stream (not cover art).
+
+    M4A files from iPhones and other sources often embed album art as a
+    video stream with disposition.attached_pic=1. These are NOT video files
+    and should not be treated as such.
+    """
     cmd = [
         "ffprobe", "-v", "quiet", "-print_format", "json",
         "-show_streams", file_path
@@ -43,7 +48,14 @@ def has_video_stream(file_path: str) -> bool:
         return False
     try:
         info = json.loads(result.stdout)
-        return any(s.get("codec_type") == "video" for s in info.get("streams", []))
+        for s in info.get("streams", []):
+            if s.get("codec_type") == "video":
+                # Ignore cover art / thumbnail streams
+                disp = s.get("disposition", {})
+                if disp.get("attached_pic", 0) == 1:
+                    continue
+                return True
+        return False
     except (json.JSONDecodeError, ValueError):
         return False
 
@@ -196,14 +208,8 @@ def process_audio(input_path: str, job_id: str) -> tuple[str, str]:
     # Archival: low-bitrate Opus for long-term storage
     opus_path = create_opus_archive(input_path, job_id)
 
-    # For video files: delete the original to save storage.
-    # Audio has been extracted into wav, playback m4a, and opus archive.
-    if is_video:
-        try:
-            input_size = Path(input_path).stat().st_size
-            Path(input_path).unlink()
-            print(f"[audio] Deleted video source ({input_size / 1048576:.1f} MB): {input_path}", flush=True)
-        except OSError as e:
-            print(f"[audio] Warning: could not delete video source: {e}", flush=True)
+    # NOTE: Never delete the input file here. Even for video files, the input
+    # must survive until the job reaches COMPLETED status so that reprocess
+    # works after OOM crashes or other mid-pipeline failures.
 
     return wav_path, opus_path
