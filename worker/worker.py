@@ -66,6 +66,8 @@ def start_transcription_api():
             elif self.path == "/audio/transcriptions":
                 # Also accept without /v1 prefix (whisper.cpp compat)
                 self._handle_transcription()
+            elif self.path == "/v1/audio/process":
+                self._handle_process()
             else:
                 self.send_error(404)
 
@@ -178,13 +180,137 @@ def start_transcription_api():
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": str(e)}).encode())
 
+        def _handle_process(self):
+            """Ephemeral audio processing — transcribe + optional alignment.
+
+            Returns results directly, no DB persistence. Designed for external
+            apps that need transcription/word-timings without VS3 job overhead.
+
+            Form params:
+              file: audio file (required)
+              alignment: "true" to include word-level timestamps (default: false)
+              diarization: "true" to include speaker labels (default: false)
+              language: language code override (default: auto-detect)
+              prompt: initial prompt for Whisper
+              response_format: "json" (default) or "verbose_json"
+            """
+            import time as _time
+            t0 = _time.time()
+            try:
+                content_type = self.headers.get("Content-Type", "")
+                if "multipart/form-data" not in content_type:
+                    self.send_error(400, "Expected multipart/form-data")
+                    return
+
+                form = cgi.FieldStorage(
+                    fp=self.rfile,
+                    headers=self.headers,
+                    environ={
+                        "REQUEST_METHOD": "POST",
+                        "CONTENT_TYPE": content_type,
+                    },
+                )
+
+                file_field = form["file"]
+                audio_data = file_field.file.read()
+                filename = file_field.filename or "audio.wav"
+
+                do_align = form.getvalue("alignment", "false") in ("true", "1", "yes")
+                do_diarize = form.getvalue("diarization", "false") in ("true", "1", "yes")
+                language = form.getvalue("language", None)
+                initial_prompt = form.getvalue("prompt", None)
+                response_format = form.getvalue("response_format", "verbose_json")
+
+                suffix = Path(filename).suffix or ".wav"
+                with tempfile.NamedTemporaryFile(suffix=suffix, delete=False, dir="/tmp") as f:
+                    f.write(audio_data)
+                    tmp_path = f.name
+
+                try:
+                    # Step 1: Transcribe with persistent WhisperX
+                    from whisper_model import transcribe_audio
+                    tx_result = transcribe_audio(
+                        tmp_path,
+                        language=language,
+                        initial_prompt=initial_prompt,
+                    )
+                    t_tx = _time.time()
+                    print(f"[process-api] Transcription: {t_tx - t0:.2f}s, "
+                          f"{len(tx_result['segments'])} segments", flush=True)
+
+                    # Step 2: Alignment / diarization (in-process, models freed after)
+                    if do_align or do_diarize:
+                        from pipeline.transcription import align_and_diarize
+                        result = align_and_diarize(
+                            tmp_path, tx_result, "ephemeral",
+                            do_align=do_align,
+                            do_diarize=do_diarize,
+                        )
+                        segments = result["segments"]
+                        lang = result["language"]
+                        t_post = _time.time()
+                        print(f"[process-api] Post-processing: {t_post - t_tx:.2f}s "
+                              f"(align={do_align}, diarize={do_diarize})", flush=True)
+                    else:
+                        segments = tx_result["segments"]
+                        lang = tx_result["language"]
+
+                    # Build response
+                    text = " ".join(
+                        seg.get("text", "").strip() for seg in segments
+                    ).strip()
+
+                    if response_format == "verbose_json":
+                        seg_list = []
+                        for i, seg in enumerate(segments):
+                            s = {
+                                "id": i,
+                                "start": seg.get("start", 0),
+                                "end": seg.get("end", 0),
+                                "text": seg.get("text", "").strip(),
+                            }
+                            if do_align and "words" in seg:
+                                s["words"] = [
+                                    {"word": w.get("word", ""), "start": w.get("start", 0), "end": w.get("end", 0)}
+                                    for w in seg["words"]
+                                ]
+                            if do_diarize and "speaker" in seg:
+                                s["speaker"] = seg["speaker"]
+                            seg_list.append(s)
+                        response = {
+                            "text": text,
+                            "language": lang,
+                            "segments": seg_list,
+                        }
+                    else:
+                        response = {"text": text}
+
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps(response).encode())
+                    print(f"[process-api] Total: {_time.time() - t0:.2f}s", flush=True)
+
+                finally:
+                    os.unlink(tmp_path)
+
+            except Exception as e:
+                print(f"[process-api] Error: {e}", flush=True)
+                import traceback
+                traceback.print_exc()
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+
         def log_message(self, format, *args):
             print(f"[whisper-api] {args[0]}", flush=True)
 
     server = HTTPServer(("0.0.0.0", API_PORT), TranscriptionHandler)
     print(f"[whisper-api] OpenAI-compatible endpoint on :{API_PORT}", flush=True)
-    print(f"[whisper-api]   POST /v1/audio/transcriptions", flush=True)
-    print(f"[whisper-api]   POST /audio/transcriptions", flush=True)
+    print(f"[whisper-api]   POST /v1/audio/transcriptions  (OpenAI compat)", flush=True)
+    print(f"[whisper-api]   POST /v1/audio/process        (ephemeral, align+diarize)", flush=True)
+    print(f"[whisper-api]   POST /audio/transcriptions     (whisper.cpp compat)", flush=True)
     print(f"[whisper-api]   GET  /health", flush=True)
     server.serve_forever()
 
