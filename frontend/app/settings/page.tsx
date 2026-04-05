@@ -100,6 +100,7 @@ export default function SettingsPage() {
   const [whisperModel, setWhisperModel] = useState("large-v3");
   const [whisperPersistent, setWhisperPersistent] = useState(true);
   const [whisperPrompt, setWhisperPrompt] = useState("");
+  const [whisperIdleTimeout, setWhisperIdleTimeout] = useState(1800);
   const [showWhisperPrompt, setShowWhisperPrompt] = useState(false);
 
   const [watcherEnabled, setWatcherEnabled] = useState(false);
@@ -136,6 +137,7 @@ export default function SettingsPage() {
         setWhisperModel(s.whisper_model || "large-v3");
         setWhisperPersistent(s.whisper_persistent ?? true);
         setWhisperPrompt(s.whisper_prompt || "");
+        setWhisperIdleTimeout(s.whisper_idle_timeout ?? 1800);
         setWatcherEnabled(s.file_watcher_enabled ?? false);
         setWatcherPath(s.file_watcher_path || "");
         setWatcherExtensions(s.file_watcher_extensions || ".m4a,.mp3,.wav,.ogg,.flac,.opus,.mp4,.webm");
@@ -195,6 +197,7 @@ export default function SettingsPage() {
 
         whisper_model: whisperModel,
         whisper_persistent: whisperPersistent,
+        whisper_idle_timeout: whisperIdleTimeout,
         whisper_prompt: whisperPrompt,
         file_watcher_enabled: watcherEnabled,
         file_watcher_path: watcherPath,
@@ -641,6 +644,32 @@ export default function SettingsPage() {
               />
             </button>
           </div>
+
+          {/* Idle Auto-Unload */}
+          {whisperPersistent && (
+            <div className="flex items-center justify-between">
+              <div className="flex-1 mr-4">
+                <h3 className="text-sm font-medium">Idle Auto-Unload</h3>
+                <p className="text-2xs text-vs-text-muted mt-1">
+                  {whisperIdleTimeout > 0
+                    ? `Unload model after ${whisperIdleTimeout >= 60 ? `${Math.floor(whisperIdleTimeout / 60)} min` : `${whisperIdleTimeout}s`} of inactivity to free VRAM. First request after unload takes ~4s to reload.`
+                    : "Model stays loaded permanently. Uses ~4 GB VRAM at all times."}
+                </p>
+              </div>
+              <select
+                value={whisperIdleTimeout}
+                onChange={(e) => setWhisperIdleTimeout(Number(e.target.value))}
+                className="input w-32 text-sm"
+              >
+                <option value={0}>Never</option>
+                <option value={300}>5 min</option>
+                <option value={600}>10 min</option>
+                <option value={1800}>30 min</option>
+                <option value={3600}>1 hour</option>
+                <option value={7200}>2 hours</option>
+              </select>
+            </div>
+          )}
 
           {/* Transcription Prompt (collapsible) */}
           <div className="border-t border-vs-border pt-4">

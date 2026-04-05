@@ -75,7 +75,15 @@ INITIAL_PROMPT = os.getenv(
     "including question marks, commas, and periods."
 )
 CACHE_DIR = os.getenv("WHISPER_CACHE_DIR", "/data/model_cache/whisper")
-IDLE_TIMEOUT = int(os.getenv("WHISPER_IDLE_TIMEOUT", "1800"))  # 30 min default
+_DEFAULT_IDLE_TIMEOUT = int(os.getenv("WHISPER_IDLE_TIMEOUT", "1800"))  # 30 min default
+
+
+def _get_idle_timeout() -> int:
+    """Get idle timeout from settings API, falling back to env var default."""
+    settings = _fetch_settings()
+    if settings:
+        return settings.get("whisper_idle_timeout", _DEFAULT_IDLE_TIMEOUT)
+    return _DEFAULT_IDLE_TIMEOUT
 
 def _get_dynamic_batch_size(max_batch: int | None = None) -> int:
     """Compute batch size based on available VRAM.
@@ -206,14 +214,16 @@ def _start_reaper():
         while True:
             time.sleep(60)  # Check every minute
 
-            if IDLE_TIMEOUT <= 0:
+            idle_timeout = _get_idle_timeout()
+
+            if idle_timeout <= 0:
                 continue  # Disabled, never unload
 
             if _model is None:
                 continue  # Nothing to unload
 
             idle_seconds = time.time() - _last_used
-            if idle_seconds < IDLE_TIMEOUT:
+            if idle_seconds < idle_timeout:
                 continue  # Still within timeout
 
             # Try to acquire lock - if someone is transcribing, skip this cycle
@@ -225,10 +235,10 @@ def _start_reaper():
                 if _model is None:
                     continue
                 idle_seconds = time.time() - _last_used
-                if idle_seconds < IDLE_TIMEOUT:
+                if idle_seconds < idle_timeout:
                     continue
 
-                print(f"[whisper] Idle for {idle_seconds:.0f}s (timeout: {IDLE_TIMEOUT}s), "
+                print(f"[whisper] Idle for {idle_seconds:.0f}s (timeout: {idle_timeout}s), "
                       f"fully unloading model to free VRAM...", flush=True)
                 t0 = time.time()
                 del _model
@@ -244,7 +254,7 @@ def _start_reaper():
 
     t = threading.Thread(target=_reaper_loop, daemon=True, name="whisper-reaper")
     t.start()
-    print(f"[whisper] Idle reaper started (timeout: {IDLE_TIMEOUT}s)", flush=True)
+    print(f"[whisper] Idle reaper started (timeout: {_get_idle_timeout()}s, 0=disabled)", flush=True)
 
 
 def _ensure_model():
@@ -351,7 +361,10 @@ def transcribe_audio(
             t_audio_done = time.time()
             effective_batch = _get_dynamic_batch_size()
             try:
-                result = model.transcribe(audio, batch_size=effective_batch, language=lang)
+                # Always pass task="transcribe" explicitly to work around WhisperX bug:
+                # when switching languages, self.tokenizer.task is an int token ID (e.g. 50360)
+                # but the Tokenizer constructor expects the string "transcribe"
+                result = model.transcribe(audio, batch_size=effective_batch, language=lang, task="transcribe")
             except RuntimeError as e:
                 if "out of memory" in str(e).lower():
                     # OOM recovery: free cache and retry with halved batch
@@ -360,7 +373,7 @@ def transcribe_audio(
                           f"retrying with batch_size={retry_batch}...", flush=True)
                     torch.cuda.empty_cache()
                     gc.collect()
-                    result = model.transcribe(audio, batch_size=retry_batch, language=lang)
+                    result = model.transcribe(audio, batch_size=retry_batch, language=lang, task="transcribe")
                 else:
                     raise
         finally:

@@ -333,6 +333,7 @@ export interface AppSettings {
   whisper_model: string;
   whisper_persistent: boolean;
   whisper_prompt: string;
+  whisper_idle_timeout: number;
   // Pipeline stages
   pipeline_alignment: boolean;
   pipeline_diarization: boolean;

@@ -61,6 +61,7 @@ class SettingsUpdate(BaseModel):
     whisper_model: str | None = None
     whisper_persistent: bool | None = None
     whisper_prompt: str | None = None
+    whisper_idle_timeout: int | None = None
     # Pipeline stages
     pipeline_alignment: bool | None = None
     pipeline_diarization: bool | None = None

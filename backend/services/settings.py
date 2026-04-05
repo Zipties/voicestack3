@@ -38,6 +38,7 @@ DEFAULTS = {
     "whisper_model": "large-v3",
     "whisper_persistent": True,
     "whisper_prompt": "",
+    "whisper_idle_timeout": 1800,
     # Pipeline stages (all enabled by default)
     "pipeline_alignment": True,
     "pipeline_diarization": True,
