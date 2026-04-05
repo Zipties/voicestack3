@@ -73,4 +73,6 @@ ENV HF_HOME=/data/model_cache/huggingface
 COPY . .
 
 # Entrypoint: seed persistent cache from baked models, then run worker
-CMD ["sh", "-c", "cp -rn /app/model_cache/* /data/model_cache/ 2>/dev/null || true; exec python worker.py"]
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+ENTRYPOINT ["/app/entrypoint.sh"]
