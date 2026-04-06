@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   Sparkles,
@@ -52,7 +52,10 @@ type Tab = "transcript" | "summary";
 export default function JobDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const jobId = params.id as string;
+  const highlightSegmentId = searchParams.get("highlight");
+  const seekTime = searchParams.get("t");
 
   const [job, setJob] = useState<Job | null>(null);
   const [tab, setTab] = useState<Tab>("transcript");
@@ -193,6 +196,35 @@ export default function JobDetailPage() {
       el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   }, [activeSegmentIdx]);
+
+  // Deep-link: highlight segment and seek audio from search results
+  const [highlightedIdx, setHighlightedIdx] = useState<number | null>(null);
+  useEffect(() => {
+    if (!transcript || !highlightSegmentId) return;
+    const idx = transcript.segments.findIndex(
+      (seg) => seg.id === highlightSegmentId
+    );
+    if (idx === -1) return;
+
+    // Scroll to segment
+    const el = segmentRefs.current.get(idx);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlightedIdx(idx);
+      // Remove highlight after 2s
+      const timer = setTimeout(() => setHighlightedIdx(null), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [transcript, highlightSegmentId]);
+
+  // Seek audio to timestamp from search deep-link
+  useEffect(() => {
+    if (!seekTime || !transcript) return;
+    const t = parseFloat(seekTime);
+    if (!isNaN(t)) {
+      usePlayerStore.getState().seekTo(t);
+    }
+  }, [seekTime, transcript]);
 
   const handleSegmentClick = (seg: Segment, idx: number) => {
     const audio = usePlayerStore.getState().audioRef;
@@ -564,6 +596,7 @@ export default function JobDetailPage() {
                 onSegmentClick={handleSegmentClick}
                 onSpeakerChanged={reloadTranscript}
                 segmentRefs={segmentRefs}
+                highlightedIdx={highlightedIdx}
               />
             ) : (
               <SummaryTab
@@ -603,6 +636,7 @@ function TranscriptTab({
   onSegmentClick,
   onSpeakerChanged,
   segmentRefs,
+  highlightedIdx,
 }: {
   segments: Segment[];
   activeIdx: number;
@@ -610,6 +644,7 @@ function TranscriptTab({
   onSegmentClick: (seg: Segment, idx: number) => void;
   onSpeakerChanged: () => void;
   segmentRefs: React.MutableRefObject<Map<number, HTMLDivElement>>;
+  highlightedIdx: number | null;
 }) {
   return (
     <div className="px-4 py-4 space-y-0.5">
@@ -622,7 +657,7 @@ function TranscriptTab({
             ref={(el) => {
               if (el) segmentRefs.current.set(idx, el);
             }}
-            className={`segment-row ${isActive ? "active" : ""}`}
+            className={`segment-row ${isActive ? "active" : ""} ${highlightedIdx === idx ? "ring-2 ring-vs-text-accent/40 transition-shadow duration-500" : ""}`}
             onClick={() => onSegmentClick(seg, idx)}
           >
             {/* Speaker */}
