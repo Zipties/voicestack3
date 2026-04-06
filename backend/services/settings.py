@@ -46,6 +46,8 @@ DEFAULTS = {
     "pipeline_speaker_matching": True,
     # Auto-summary: "off", "all", "known_speakers_only"
     "auto_summary": "off",
+    # Calendar
+    "calendar_ical_url": "",
     # OpenClaw
     "openclaw_gateway_url": "",
     "openclaw_gateway_token": "",

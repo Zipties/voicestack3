@@ -10,6 +10,7 @@ from api.stats import router as stats_router
 from api.semantic import router as semantic_router
 from api.settings import router as settings_router
 from api.search import router as search_router
+from api.calendar import router as calendar_router
 
 app = FastAPI(title="VoiceStack3", version="0.1.0")
 
@@ -29,6 +30,7 @@ app.include_router(stats_router)
 app.include_router(semantic_router)
 app.include_router(settings_router)
 app.include_router(search_router)
+app.include_router(calendar_router)
 
 
 # Shutdown event that SSE streams check

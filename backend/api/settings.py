@@ -69,6 +69,8 @@ class SettingsUpdate(BaseModel):
     pipeline_speaker_matching: bool | None = None
     # Auto-summary
     auto_summary: str | None = None
+    # Calendar
+    calendar_ical_url: str | None = None
     # OpenClaw
     openclaw_gateway_url: str | None = None
     openclaw_gateway_token: str | None = None
