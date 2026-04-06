@@ -27,7 +27,9 @@ def _patched_torch_load(*args, **kwargs):
     return _original_torch_load(*args, **kwargs)
 torch.load = _patched_torch_load
 
+import subprocess
 import threading
+import urllib.parse
 import urllib.request
 from sqlalchemy import text
 from db_helper import get_db_session
@@ -73,6 +75,28 @@ def update_job(db, job_id: str, **kwargs):
     params = {"job_id": job_id, **kwargs}
     db.execute(text(f"UPDATE jobs SET {sets} WHERE id = :job_id"), params)
     db.commit()
+
+
+def _get_recording_time(input_path: str) -> str | None:
+    """Extract recording timestamp from file metadata or mtime."""
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", input_path],
+            capture_output=True, text=True,
+        )
+        if result.returncode == 0:
+            info = json.loads(result.stdout)
+            creation_time = info.get("format", {}).get("tags", {}).get("creation_time")
+            if creation_time:
+                return creation_time
+    except Exception:
+        pass
+    try:
+        mtime = os.path.getmtime(input_path)
+        from datetime import datetime, timezone
+        return datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+    except Exception:
+        return None
 
 
 def run_gpu_pipeline(job_id: str, input_path: str, tx_result: dict | None = None):
@@ -213,6 +237,31 @@ def run_gpu_pipeline(job_id: str, input_path: str, tx_result: dict | None = None
                 {"title": first_text, "id": transcript_id},
             )
             db.commit()
+
+        # ── Calendar match (auto-name from meeting) ──────────────
+        recording_time = _get_recording_time(input_path)
+        if recording_time:
+            try:
+                url = f"{BACKEND_URL}/api/calendar/match?ts={urllib.parse.quote(recording_time)}"
+                req = urllib.request.Request(url)
+                resp = urllib.request.urlopen(req, timeout=10)
+                cal_data = json.loads(resp.read())
+                if cal_data.get("matched"):
+                    event_title = cal_data["event_title"]
+                    date_str = recording_time[:10]
+                    cal_title = f"Meeting: {event_title} {date_str}"
+                    db.execute(
+                        text("UPDATE transcripts SET title = :title WHERE id = :id"),
+                        {"title": cal_title, "id": transcript_id},
+                    )
+                    db.execute(
+                        text("UPDATE jobs SET params = params || :lock WHERE id = :jid"),
+                        {"lock": json.dumps({"title_locked": True}), "jid": job_id},
+                    )
+                    db.commit()
+                    print(f"[pipeline] Calendar match: {cal_title}", flush=True)
+            except Exception as e:
+                print(f"[pipeline] Calendar match failed (non-fatal): {e}", flush=True)
 
         # ── Done! ───────────────────────────────────────────────
         update_job(db, job_id, status="COMPLETED", progress=100,

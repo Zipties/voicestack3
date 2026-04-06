@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_
 from db.session import get_db
-from db.models import Transcript, Segment, Speaker, Tag
+from db.models import Transcript, Segment, Speaker, Tag, Job
 from services.llm import generate_overview
 from services.chat import chat_with_agent, list_agents
 from services.qdrant import reindex_transcript, mark_stale, get_index_status
@@ -126,6 +126,14 @@ async def update_transcript(
         raise HTTPException(status_code=404, detail="Transcript not found")
 
     transcript.title = update.title
+
+    # Lock title so LLM re-summarization won't overwrite manual edits
+    job = db.query(Job).filter(Job.id == transcript.job_id).first()
+    if job:
+        params = dict(job.params or {})
+        params["title_locked"] = True
+        job.params = params
+
     db.commit()
 
     mark_stale(transcript_id)
@@ -284,7 +292,11 @@ async def generate_transcript_overview(transcript_id: str, bg: BackgroundTasks, 
          "checked": False}
         for item in overview["action_items"]
     ]
-    transcript.title = overview["title"]
+    # Only update title if not locked by calendar match or manual edit
+    job = db.query(Job).filter(Job.id == transcript.job_id).first()
+    title_locked = (job.params or {}).get("title_locked", False) if job else False
+    if not title_locked:
+        transcript.title = overview["title"]
     transcript.summary = json.dumps({
         "text": overview["summary"],
         "action_items": action_items,
@@ -366,7 +378,11 @@ async def resummarize_transcript(transcript_id: str, bg: BackgroundTasks, db: Se
          "checked": False}
         for item in overview["action_items"]
     ]
-    transcript.title = overview["title"]
+    # Only update title if not locked by calendar match or manual edit
+    job = db.query(Job).filter(Job.id == transcript.job_id).first()
+    title_locked = (job.params or {}).get("title_locked", False) if job else False
+    if not title_locked:
+        transcript.title = overview["title"]
     transcript.summary = json.dumps({
         "text": overview["summary"],
         "action_items": action_items,
