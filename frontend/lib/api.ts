@@ -341,6 +341,8 @@ export interface AppSettings {
   pipeline_speaker_matching: boolean;
   // Auto-summary
   auto_summary: "off" | "all" | "known_speakers_only";
+  // Calendar
+  calendar_ical_url: string;
   // File watcher
   file_watcher_enabled: boolean;
   file_watcher_path: string;

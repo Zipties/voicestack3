@@ -19,6 +19,7 @@ import {
   Play,
   RefreshCw,
   Mic,
+  CalendarDays,
 } from "lucide-react";
 import {
   fetchSettings,
@@ -103,6 +104,8 @@ export default function SettingsPage() {
   const [whisperIdleTimeout, setWhisperIdleTimeout] = useState(1800);
   const [showWhisperPrompt, setShowWhisperPrompt] = useState(false);
 
+  const [calendarIcalUrl, setCalendarIcalUrl] = useState("");
+
   const [watcherEnabled, setWatcherEnabled] = useState(false);
   const [watcherPath, setWatcherPath] = useState("");
   const [watcherExtensions, setWatcherExtensions] = useState(".m4a,.mp3,.wav,.ogg,.flac,.opus,.mp4,.webm");
@@ -138,6 +141,7 @@ export default function SettingsPage() {
         setWhisperPersistent(s.whisper_persistent ?? true);
         setWhisperPrompt(s.whisper_prompt || "");
         setWhisperIdleTimeout(s.whisper_idle_timeout ?? 1800);
+        setCalendarIcalUrl(s.calendar_ical_url || "");
         setWatcherEnabled(s.file_watcher_enabled ?? false);
         setWatcherPath(s.file_watcher_path || "");
         setWatcherExtensions(s.file_watcher_extensions || ".m4a,.mp3,.wav,.ogg,.flac,.opus,.mp4,.webm");
@@ -199,6 +203,7 @@ export default function SettingsPage() {
         whisper_persistent: whisperPersistent,
         whisper_idle_timeout: whisperIdleTimeout,
         whisper_prompt: whisperPrompt,
+        calendar_ical_url: calendarIcalUrl,
         file_watcher_enabled: watcherEnabled,
         file_watcher_path: watcherPath,
         file_watcher_extensions: watcherExtensions,
@@ -968,6 +973,30 @@ export default function SettingsPage() {
             </div>
           </div>
         )}
+      </section>
+
+      {/* ── Calendar Integration ── */}
+      <section className="card p-6 mb-4">
+        <div className="flex items-center gap-2 mb-4">
+          <CalendarDays className="w-5 h-5 text-vs-text-accent" />
+          <h2 className="text-lg font-medium">Calendar Integration</h2>
+        </div>
+        <p className="text-sm text-vs-text-secondary mb-4">
+          Auto-name recordings that match calendar events.
+        </p>
+        <div>
+          <label className="block text-sm text-vs-text-secondary mb-1">iCal Feed URL</label>
+          <p className="text-2xs text-vs-text-muted mt-0.5 mb-2">
+            Paste your Google Calendar iCal link. Recordings within 15 minutes of a calendar event will be automatically named.
+          </p>
+          <input
+            type="url"
+            value={calendarIcalUrl}
+            onChange={(e) => setCalendarIcalUrl(e.target.value)}
+            placeholder="https://calendar.google.com/calendar/ical/..."
+            className="input w-full"
+          />
+        </div>
       </section>
 
       {/* ── File Watcher ── */}
