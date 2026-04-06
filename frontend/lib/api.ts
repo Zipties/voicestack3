@@ -426,6 +426,50 @@ export async function triggerWatcherScan(): Promise<{
 }
 
 
+// ─── Search ─────────────────────────────────────────────────────────────────
+
+export interface SearchResult {
+  type: string;
+  source: string;
+  score: number;
+  segment_id: string;
+  transcript_id: string;
+  job_id: string;
+  title: string | null;
+  speaker: string | null;
+  text: string;
+  start_time: number;
+  end_time: number;
+  emotion: string | null;
+  created_at: string | null;
+}
+
+export interface SearchResponse {
+  query: string;
+  results: SearchResult[];
+  meta: {
+    semantic_available: boolean;
+    semantic_count: number;
+    verbatim_count: number;
+    total: number;
+    duration_ms: number;
+  };
+}
+
+export async function searchTranscripts(
+  q: string,
+  limit?: number,
+  speaker?: string,
+  signal?: AbortSignal
+): Promise<SearchResponse> {
+  const params = new URLSearchParams({ q });
+  if (limit) params.set("limit", String(limit));
+  if (speaker) params.set("speaker", speaker);
+  const res = await fetch(`${API_URL}/api/search?${params}`, { signal });
+  if (!res.ok) throw new Error(`Search failed: ${res.status}`);
+  return res.json();
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 export interface ChatAgent {

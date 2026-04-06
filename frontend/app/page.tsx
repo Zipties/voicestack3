@@ -101,7 +101,7 @@ export default function JobsPage() {
   };
 
   return (
-    <div className="p-4 sm:p-6 pt-14 md:pt-6 max-w-4xl mx-auto w-full flex-1 overflow-auto">
+    <div className="p-4 sm:p-6 pt-14 md:pt-6 max-w-4xl mx-auto w-full flex-1">
       {/* Record / Upload Area - always visible */}
       <div
           className={`card mb-6 p-8 border-2 border-dashed transition-colors duration-150 ${

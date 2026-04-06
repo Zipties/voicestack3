@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Sidebar } from "@/components/sidebar";
+import { SearchBar } from "@/components/search-bar";
 import { ServiceWorker } from "@/components/service-worker";
 
 export const viewport: Viewport = {
@@ -36,7 +37,10 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className="flex h-dvh overflow-hidden">
         <Sidebar />
-        <main className="flex-1 min-h-0 overflow-hidden flex flex-col">{children}</main>
+        <main className="flex-1 min-h-0 overflow-hidden flex flex-col">
+          <SearchBar />
+          <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">{children}</div>
+        </main>
         <ServiceWorker />
       </body>
     </html>
