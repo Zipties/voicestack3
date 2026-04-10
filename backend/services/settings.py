@@ -47,7 +47,11 @@ DEFAULTS = {
     # Auto-summary: "off", "all", "known_speakers_only"
     "auto_summary": "off",
     # Calendar
+    "calendar_provider": "ical",  # "ical" or "google"
     "calendar_ical_url": "",
+    "calendar_google_sa_key": "",  # path to service account JSON
+    "calendar_google_user": "",  # email to impersonate
+    "calendar_excluded_calendars": [],  # list of calendar IDs to skip
     # OpenClaw
     "openclaw_gateway_url": "",
     "openclaw_gateway_token": "",

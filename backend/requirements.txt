@@ -21,6 +21,10 @@ httpx==0.28.1
 # Calendar parsing
 icalendar==6.1.3
 
+# Google Calendar API
+google-auth==2.38.0
+google-api-python-client==2.164.0
+
 # Utilities
 python-dotenv==1.2.1
 pydantic==2.12.5

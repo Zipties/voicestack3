@@ -70,7 +70,11 @@ class SettingsUpdate(BaseModel):
     # Auto-summary
     auto_summary: str | None = None
     # Calendar
+    calendar_provider: str | None = None
     calendar_ical_url: str | None = None
+    calendar_google_sa_key: str | None = None
+    calendar_google_user: str | None = None
+    calendar_excluded_calendars: list[str] | None = None
     # OpenClaw
     openclaw_gateway_url: str | None = None
     openclaw_gateway_token: str | None = None

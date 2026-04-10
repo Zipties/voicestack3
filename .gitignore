@@ -17,6 +17,10 @@ node_modules/
 .next/
 out/
 
+# Secrets
+.keys/
+*.json.key
+
 # Environment
 .env
 .env.local

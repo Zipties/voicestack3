@@ -342,7 +342,11 @@ export interface AppSettings {
   // Auto-summary
   auto_summary: "off" | "all" | "known_speakers_only";
   // Calendar
+  calendar_provider: "ical" | "google";
   calendar_ical_url: string;
+  calendar_google_sa_key: string;
+  calendar_google_user: string;
+  calendar_excluded_calendars: string[];
   // File watcher
   file_watcher_enabled: boolean;
   file_watcher_path: string;
@@ -396,6 +400,25 @@ export async function testLlmConnection(): Promise<{
   });
   if (!res.ok) throw new Error(`Test failed: ${res.status}`);
   return res.json();
+}
+
+export interface CalendarSource {
+  id: string;
+  summary: string;
+  primary: boolean;
+  accessRole: string;
+  backgroundColor: string;
+  enabled: boolean;
+}
+
+export async function fetchCalendarSources(): Promise<CalendarSource[]> {
+  const res = await fetch(`${API_URL}/api/calendar/sources`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+    throw new Error(err.detail || `Failed to fetch calendars: ${res.status}`);
+  }
+  const data = await res.json();
+  return data.calendars || [];
 }
 
 export async function testQdrantConnection(): Promise<{

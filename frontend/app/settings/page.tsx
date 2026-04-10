@@ -29,6 +29,7 @@ import {
   testQdrantConnection,
   fetchWatcherStatus,
   triggerWatcherScan,
+  fetchCalendarSources,
   type AppSettings,
   type WatcherStatus,
 } from "@/lib/api";
@@ -104,7 +105,14 @@ export default function SettingsPage() {
   const [whisperIdleTimeout, setWhisperIdleTimeout] = useState(1800);
   const [showWhisperPrompt, setShowWhisperPrompt] = useState(false);
 
+  const [calendarProvider, setCalendarProvider] = useState<"ical" | "google">("ical");
   const [calendarIcalUrl, setCalendarIcalUrl] = useState("");
+  const [calendarGoogleSaKey, setCalendarGoogleSaKey] = useState("");
+  const [calendarGoogleUser, setCalendarGoogleUser] = useState("");
+  const [calendarExcluded, setCalendarExcluded] = useState<string[]>([]);
+  const [calendarSources, setCalendarSources] = useState<import("@/lib/api").CalendarSource[]>([]);
+  const [calendarDiscovering, setCalendarDiscovering] = useState(false);
+  const [calendarError, setCalendarError] = useState<string | null>(null);
 
   const [watcherEnabled, setWatcherEnabled] = useState(false);
   const [watcherPath, setWatcherPath] = useState("");
@@ -141,7 +149,11 @@ export default function SettingsPage() {
         setWhisperPersistent(s.whisper_persistent ?? true);
         setWhisperPrompt(s.whisper_prompt || "");
         setWhisperIdleTimeout(s.whisper_idle_timeout ?? 1800);
+        setCalendarProvider((s as any).calendar_provider || "ical");
         setCalendarIcalUrl(s.calendar_ical_url || "");
+        setCalendarGoogleSaKey((s as any).calendar_google_sa_key || "");
+        setCalendarGoogleUser((s as any).calendar_google_user || "");
+        setCalendarExcluded((s as any).calendar_excluded_calendars || []);
         setWatcherEnabled(s.file_watcher_enabled ?? false);
         setWatcherPath(s.file_watcher_path || "");
         setWatcherExtensions(s.file_watcher_extensions || ".m4a,.mp3,.wav,.ogg,.flac,.opus,.mp4,.webm");
@@ -203,7 +215,11 @@ export default function SettingsPage() {
         whisper_persistent: whisperPersistent,
         whisper_idle_timeout: whisperIdleTimeout,
         whisper_prompt: whisperPrompt,
+        calendar_provider: calendarProvider,
         calendar_ical_url: calendarIcalUrl,
+        calendar_google_sa_key: calendarGoogleSaKey,
+        calendar_google_user: calendarGoogleUser,
+        calendar_excluded_calendars: calendarExcluded,
         file_watcher_enabled: watcherEnabled,
         file_watcher_path: watcherPath,
         file_watcher_extensions: watcherExtensions,
@@ -982,21 +998,160 @@ export default function SettingsPage() {
           <h2 className="text-lg font-medium">Calendar Integration</h2>
         </div>
         <p className="text-sm text-vs-text-secondary mb-4">
-          Auto-name recordings that match calendar events.
+          Auto-name recordings that match calendar events. Recordings within 15 minutes of a calendar event will be automatically named.
         </p>
-        <div>
-          <label className="block text-sm text-vs-text-secondary mb-1">iCal Feed URL</label>
-          <p className="text-2xs text-vs-text-muted mt-0.5 mb-2">
-            Paste your Google Calendar iCal link. Recordings within 15 minutes of a calendar event will be automatically named.
-          </p>
-          <input
-            type="url"
-            value={calendarIcalUrl}
-            onChange={(e) => setCalendarIcalUrl(e.target.value)}
-            placeholder="https://calendar.google.com/calendar/ical/..."
-            className="input w-full"
-          />
+
+        {/* Provider selector */}
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={() => setCalendarProvider("ical")}
+            className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
+              calendarProvider === "ical"
+                ? "border-vs-text-accent bg-vs-text-accent/10 text-vs-text-accent"
+                : "border-vs-border text-vs-text-secondary hover:border-vs-text-muted"
+            }`}
+          >
+            iCal Feed
+          </button>
+          <button
+            onClick={() => setCalendarProvider("google")}
+            className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
+              calendarProvider === "google"
+                ? "border-vs-text-accent bg-vs-text-accent/10 text-vs-text-accent"
+                : "border-vs-border text-vs-text-secondary hover:border-vs-text-muted"
+            }`}
+          >
+            Google Calendar API
+          </button>
         </div>
+
+        {calendarProvider === "ical" && (
+          <div>
+            <label className="block text-sm text-vs-text-secondary mb-1">iCal Feed URL</label>
+            <p className="text-2xs text-vs-text-muted mt-0.5 mb-2">
+              Paste your Google Calendar iCal link. All visible calendars will be included.
+            </p>
+            <input
+              type="url"
+              value={calendarIcalUrl}
+              onChange={(e) => setCalendarIcalUrl(e.target.value)}
+              placeholder="https://calendar.google.com/calendar/ical/..."
+              className="input w-full"
+            />
+          </div>
+        )}
+
+        {calendarProvider === "google" && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm text-vs-text-secondary mb-1">Service Account Key Path</label>
+              <p className="text-2xs text-vs-text-muted mt-0.5 mb-2">
+                Path to the Google service account JSON key file on the server.
+              </p>
+              <input
+                type="text"
+                value={calendarGoogleSaKey}
+                onChange={(e) => setCalendarGoogleSaKey(e.target.value)}
+                placeholder="/path/to/service-account.json"
+                className="input w-full"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-vs-text-secondary mb-1">User Email</label>
+              <p className="text-2xs text-vs-text-muted mt-0.5 mb-2">
+                Google Workspace email to impersonate (requires domain-wide delegation).
+              </p>
+              <input
+                type="email"
+                value={calendarGoogleUser}
+                onChange={(e) => setCalendarGoogleUser(e.target.value)}
+                placeholder="you@yourdomain.com"
+                className="input w-full"
+              />
+            </div>
+
+            {/* Discover calendars button */}
+            <div>
+              <button
+                onClick={async () => {
+                  setCalendarDiscovering(true);
+                  setCalendarError(null);
+                  try {
+                    const sources = await fetchCalendarSources();
+                    setCalendarSources(sources);
+                    // Initialize excluded list from what the server reports
+                    setCalendarExcluded(
+                      sources.filter((s) => !s.enabled).map((s) => s.id)
+                    );
+                  } catch (e: any) {
+                    setCalendarError(e.message);
+                    setCalendarSources([]);
+                  } finally {
+                    setCalendarDiscovering(false);
+                  }
+                }}
+                disabled={calendarDiscovering || !calendarGoogleSaKey || !calendarGoogleUser}
+                className="btn btn-secondary text-sm flex items-center gap-2"
+              >
+                {calendarDiscovering ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4" />
+                )}
+                Discover Calendars
+              </button>
+              {calendarError && (
+                <p className="text-xs text-red-400 mt-2">{calendarError}</p>
+              )}
+            </div>
+
+            {/* Calendar checkboxes */}
+            {calendarSources.length > 0 && (
+              <div className="border border-vs-border rounded-md p-3">
+                <p className="text-sm text-vs-text-secondary mb-3">
+                  Select which calendars to match recordings against:
+                </p>
+                <div className="space-y-2">
+                  {calendarSources.map((cal) => {
+                    const isEnabled = !calendarExcluded.includes(cal.id);
+                    return (
+                      <label
+                        key={cal.id}
+                        className="flex items-center gap-3 py-1.5 px-2 rounded hover:bg-vs-bg-secondary cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isEnabled}
+                          onChange={() => {
+                            setCalendarExcluded((prev) =>
+                              isEnabled
+                                ? [...prev, cal.id]
+                                : prev.filter((id) => id !== cal.id)
+                            );
+                          }}
+                          className="rounded border-vs-border"
+                        />
+                        {cal.backgroundColor && (
+                          <span
+                            className="w-3 h-3 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: cal.backgroundColor }}
+                          />
+                        )}
+                        <span className="text-sm">
+                          {cal.summary}
+                          {cal.primary && (
+                            <span className="text-2xs text-vs-text-muted ml-1">(primary)</span>
+                          )}
+                        </span>
+                        <span className="text-2xs text-vs-text-muted ml-auto">{cal.id}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       {/* ── File Watcher ── */}
