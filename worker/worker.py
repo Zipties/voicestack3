@@ -238,6 +238,11 @@ def start_transcription_api():
                     print(f"[process-api] Transcription: {t_tx - t0:.2f}s, "
                           f"{len(tx_result['segments'])} segments", flush=True)
 
+                    # Nothing to align/diarize when the silence gate (or VAD)
+                    # returned zero segments - whisperx.align would choke on []
+                    if not tx_result["segments"]:
+                        do_align = do_diarize = False
+
                     # Step 2: Alignment / diarization (in-process, models freed after)
                     if do_align or do_diarize:
                         from pipeline.transcription import align_and_diarize

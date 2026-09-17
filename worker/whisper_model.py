@@ -26,6 +26,8 @@ import threading
 import urllib.request
 from dataclasses import replace as dc_replace
 
+import numpy as np
+
 # PyTorch 2.6+ safe loading fix - must be applied before any model loads
 import torch
 _original_torch_load = torch.load
@@ -76,6 +78,13 @@ INITIAL_PROMPT = os.getenv(
 )
 CACHE_DIR = os.getenv("WHISPER_CACHE_DIR", "/data/model_cache/whisper")
 _DEFAULT_IDLE_TIMEOUT = int(os.getenv("WHISPER_IDLE_TIMEOUT", "1800"))  # 30 min default
+
+# Silence gate: Whisper hallucinates conversational filler ("thank you", etc.)
+# when dead air reaches the decoder. Skip decode entirely when the whole clip
+# is below BOTH thresholds. Dual condition keeps whisper-quiet speech safe:
+# faint speech still has peaks well above 0.01. Set RMS threshold to 0 to disable.
+SILENCE_RMS_THRESHOLD = float(os.getenv("WHISPER_SILENCE_RMS_THRESHOLD", "0.002"))
+SILENCE_PEAK_THRESHOLD = float(os.getenv("WHISPER_SILENCE_PEAK_THRESHOLD", "0.01"))
 
 
 def _get_idle_timeout() -> int:
@@ -359,23 +368,38 @@ def transcribe_audio(
             t_audio_start = time.time()
             audio = whisperx.load_audio(audio_path)
             t_audio_done = time.time()
-            effective_batch = _get_dynamic_batch_size()
-            try:
-                # Always pass task="transcribe" explicitly to work around WhisperX bug:
-                # when switching languages, self.tokenizer.task is an int token ID (e.g. 50360)
-                # but the Tokenizer constructor expects the string "transcribe"
-                result = model.transcribe(audio, batch_size=effective_batch, language=lang, task="transcribe")
-            except RuntimeError as e:
-                if "out of memory" in str(e).lower():
-                    # OOM recovery: free cache and retry with halved batch
-                    retry_batch = max(1, effective_batch // 2)
-                    print(f"[whisper] CUDA OOM with batch_size={effective_batch}, "
-                          f"retrying with batch_size={retry_batch}...", flush=True)
-                    torch.cuda.empty_cache()
-                    gc.collect()
-                    result = model.transcribe(audio, batch_size=retry_batch, language=lang, task="transcribe")
-                else:
-                    raise
+
+            # Silence gate: measure the clip before touching the decoder.
+            duration_s = len(audio) / 16000  # load_audio returns 16kHz float32 mono
+            if audio.size:
+                rms = float(np.sqrt(np.mean(audio.astype(np.float64) ** 2)))
+                peak = float(np.max(np.abs(audio)))
+            else:
+                rms = peak = 0.0
+            if (SILENCE_RMS_THRESHOLD > 0
+                    and rms < SILENCE_RMS_THRESHOLD
+                    and peak < SILENCE_PEAK_THRESHOLD):
+                print(f"[whisper] Silence gate: {duration_s:.1f}s clip below threshold "
+                      f"(rms={rms:.5f}, peak={peak:.5f}), skipping decode", flush=True)
+                result = {"segments": [], "language": lang}
+            else:
+                effective_batch = _get_dynamic_batch_size()
+                try:
+                    # Always pass task="transcribe" explicitly to work around WhisperX bug:
+                    # when switching languages, self.tokenizer.task is an int token ID (e.g. 50360)
+                    # but the Tokenizer constructor expects the string "transcribe"
+                    result = model.transcribe(audio, batch_size=effective_batch, language=lang, task="transcribe")
+                except RuntimeError as e:
+                    if "out of memory" in str(e).lower():
+                        # OOM recovery: free cache and retry with halved batch
+                        retry_batch = max(1, effective_batch // 2)
+                        print(f"[whisper] CUDA OOM with batch_size={effective_batch}, "
+                              f"retrying with batch_size={retry_batch}...", flush=True)
+                        torch.cuda.empty_cache()
+                        gc.collect()
+                        result = model.transcribe(audio, batch_size=retry_batch, language=lang, task="transcribe")
+                    else:
+                        raise
         finally:
             if saved_options is not None:
                 model.options = saved_options

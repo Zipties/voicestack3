@@ -1,8 +1,10 @@
 # PyTorch installed separately in Containerfile with CUDA index URL
 # (torch>=2.4.0, torchaudio>=2.4.0)
 
-# WhisperX (bundles faster-whisper, ctranslate2, pyannote.audio)
-whisperx==3.7.6
+# WhisperX (bundles ctranslate2, pyannote.audio)
+# 3.8.x requires faster-whisper>=1.2.0; pinned explicitly for Silero-VAD v6
+whisperx==3.8.6
+faster-whisper==1.2.1
 
 # Emotion detection (emotion2vec)
 funasr==1.2.7

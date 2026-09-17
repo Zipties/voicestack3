@@ -71,7 +71,7 @@ def verify_speakers(audio_path: str, min_duration: float = 2.0,
 
         diarization_pipeline = PyannotePipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
-            use_auth_token=hf_token or True,
+            token=hf_token or True,  # pyannote.audio 4.x renamed use_auth_token -> token
             cache_dir=os.getenv("PYANNOTE_CACHE_DIR", "/app/model_cache/pyannote"),
         )
         # pyannote supports CUDA and MPS

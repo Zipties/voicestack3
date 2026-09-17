@@ -41,8 +41,17 @@ def detect_emotions(audio_path: str, segments: list, job_id: str) -> list[dict]:
 
     from funasr import AutoModel
     # Use local path directly to avoid ModelScope re-download at runtime
-    # (the model is baked into the image at build time)
-    local_model = "/app/model_cache/modelscope/models/iic/emotion2vec_plus_large"
+    # (the model is baked into the image at build time).
+    # modelscope >=1.36 switched to HF-style layout (iic--<name>/snapshots/<rev>);
+    # older releases used models/iic/<name>. Resolve whichever exists.
+    import glob
+    _candidates = [
+        "/app/model_cache/modelscope/models/iic/emotion2vec_plus_large",
+        *sorted(glob.glob(
+            "/app/model_cache/modelscope/models/iic--emotion2vec_plus_large/snapshots/*"
+        )),
+    ]
+    local_model = next((p for p in _candidates if os.path.isdir(p)), _candidates[0])
     model = AutoModel(
         model=local_model,
         device=device,

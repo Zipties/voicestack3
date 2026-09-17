@@ -119,8 +119,9 @@ def align_and_diarize(
 
         print("[WhisperX] Loading diarization pipeline...", flush=True)
         from whisperx.diarize import DiarizationPipeline
+        # whisperx 3.8.x: pyannote 4.x renamed use_auth_token -> token
         diarize_model = DiarizationPipeline(
-            use_auth_token=hf_token or True,
+            token=hf_token or True,
             device=device,
         )
         diarize_segments = diarize_model(audio)

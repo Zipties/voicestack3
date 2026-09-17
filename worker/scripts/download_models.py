@@ -41,9 +41,10 @@ def main():
         # weights (segmentation-3.0, wespeaker-voxceleb-resnet34-LM).
         print("==> Downloading pyannote/speaker-diarization-3.1 pipeline...")
         from pyannote.audio import Pipeline as PyannotePipeline
+        # pyannote.audio 4.x renamed use_auth_token -> token
         pipeline = PyannotePipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
-            use_auth_token=hf_token,
+            token=hf_token,
         )
         # Force-load sub-models so their weights are cached too
         pipeline.to(torch.device("cpu"))
