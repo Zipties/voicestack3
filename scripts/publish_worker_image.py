@@ -54,7 +54,10 @@ def main():
     token=os.environ.pop('GH_TOKEN')
     req=urllib.request.Request('https://api.github.com/user',headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json'})
     with urllib.request.urlopen(req,timeout=30) as r:
+        reported_scopes=r.headers.get('X-OAuth-Scopes')
         username=json.load(r)['login']
+    if reported_scopes is not None and 'write:packages' not in [x.strip() for x in reported_scopes.split(',')]:
+        raise RuntimeError('Agent token lacks write:packages; publish through GitHub Actions instead')
     print('Authenticated GitHub publisher:',username,flush=True)
     original=json.loads(call(['podman','image','inspect',args.source]))[0]
     cfg=original['Config']

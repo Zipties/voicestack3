@@ -111,7 +111,7 @@ jobs:
           build-args: |
             PLATFORM=cuda
           secrets: |
-            hf_token=${{ secrets.HF_TOKEN }}
+            hf_token=${{ secrets.HF_BUILD_TOKEN }}
           tags: |
             ${{ env.IMAGE_PREFIX }}-worker:latest
             ${{ env.IMAGE_PREFIX }}-worker:${{ github.ref_name }}
@@ -167,6 +167,6 @@ jobs:
           build-args: |
             PLATFORM=cpu
           secrets: |
-            hf_token=${{ secrets.HF_TOKEN }}
+            hf_token=${{ secrets.HF_BUILD_TOKEN }}
           tags: |
             ${{ env.IMAGE_PREFIX }}-worker:cpu
