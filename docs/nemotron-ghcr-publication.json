@@ -1,0 +1,13 @@
+{
+  "workflow_run_id": 38418424407,
+  "workflow_url": "https://github.com/Zipties/voicestack3/actions/runs/38418424407",
+  "source_revision": "e6d635443a83e53c9c9c225f7827f3dfb00e08ae",
+  "status": "completed",
+  "registry_image": "ghcr.io/zipties/voicestack3-worker:latest",
+  "conclusion": "success",
+  "remote_manifest_digest": "sha256:ec1c219deaff735eb58ee7f0647d5294de874692fcd146db113d954e537a1075",
+  "immutable_image": "ghcr.io/zipties/voicestack3-worker:sha-e6d635443a83e53c9c9c225f7827f3dfb00e08ae",
+  "remote_config_credential_free": true,
+  "remote_default_backend": "nemotron",
+  "platform": "linux/amd64"
+}

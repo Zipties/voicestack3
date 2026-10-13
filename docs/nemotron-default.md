@@ -14,9 +14,11 @@ Subprocess scratch audio uses a temporary directory that is cleaned on success o
 
 ## Deployment and rollback
 
-Current deployed worker image ID: `f75c4d848c1435baa555425bbd9f109294ab6129c7e90d503f5fa319cf90bc75`, tagged locally as `ghcr.io/zipties/voicestack3-worker:latest` and `localhost/vs3-worker:nemotron-candidate`. This is a LOCAL image; it has not been pushed to GHCR.
+Initial deployed worker image ID: `f75c4d848c1435baa555425bbd9f109294ab6129c7e90d503f5fa319cf90bc75` (still running after publication, retained as `localhost/vs3-worker:nemotron-candidate`). Publication subsequently completed through the scoped GitHub Actions workflow: GHCR `latest` and the immutable source tag resolve to `sha256:ec1c219deaff735eb58ee7f0647d5294de874692fcd146db113d954e537a1075`. The pulled release image ID is `a45755032b019169dad7e7814ad56df65d941c0b2ce238885ec157f0b8453ccc`, and the local latest alias now points to it. See `ghcr-worker-publication.md` and the two GHCR evidence JSON files. Publication did not restart the already-qualified running worker.
 
-The rollback image is retained as `localhost/vs3-worker:pre-nemotron-20261013` (ID `f9951aeea6043f91a13c8e7d98a6a7c79d8dd416ece54b62b3561c6993413f2d`). Only the idle worker was recreated using the existing `podman-compose.yml` + `compose.gpu.yml` manager. Database, backend, frontend and Redis were not recreated. A full stack pull of upstream latest would replace this local image; build/publish this change before using remote pulls for the worker.
+The rollback image is retained as `localhost/vs3-worker:pre-nemotron-20261013` (ID `f9951aeea6043f91a13c8e7d98a6a7c79d8dd416ece54b62b3561c6993413f2d`). Only the idle worker was recreated during the initial rollout using the existing `podman-compose.yml` + `compose.gpu.yml` manager. Database, backend, frontend and Redis were not recreated. Remote pulls of latest now receive the verified Nemotron release.
+
+The legacy local images contain the previously exposed HF token. Never republish them or use that credential for new authentication. For a cached offline rollback, override `HF_TOKEN` to empty and set `HF_HUB_OFFLINE=1` / `TRANSFORMERS_OFFLINE=1`; gated downloads instead require a separately provisioned replacement credential after approved rotation.
 
 `worker/Containerfile` includes the isolated runtime and pinned model for future normal builds. The first promotion deliberately used `worker/Containerfile.nemotron`, layering onto the exact previous image rather than re-resolving WhisperX/emotion/embedding dependencies. For that derivative build, prepare a temporary context with the five changed pipeline files and the pinned model snapshot as `nemotron-model/`; no models or scratch output belong in the Git tree.
 

@@ -1,0 +1,19 @@
+{
+  "backend": "nemotron",
+  "transcription_segments": 4,
+  "aligned_segments": 20,
+  "emotion_results": 20,
+  "speaker_verification_count": 3,
+  "read_only_validation": true,
+  "versions": {
+    "torch": "2.8.0",
+    "whisperx": "3.8.6",
+    "transformers": "4.57.6",
+    "pyannote.audio": "4.0.7",
+    "funasr": "1.2.7",
+    "modelscope": "1.40.2"
+  },
+  "artifact_reference": "ghcr.io/zipties/voicestack3-worker@sha256:ec1c219deaff735eb58ee7f0647d5294de874692fcd146db113d954e537a1075",
+  "registry_digest_checked": true,
+  "image_id": "a45755032b019169dad7e7814ad56df65d941c0b2ce238885ec157f0b8453ccc"
+}
