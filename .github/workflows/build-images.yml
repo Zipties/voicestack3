@@ -110,7 +110,8 @@ jobs:
           platforms: linux/amd64
           build-args: |
             PLATFORM=cuda
-            HF_TOKEN=${{ secrets.HF_TOKEN }}
+          secrets: |
+            hf_token=${{ secrets.HF_TOKEN }}
           tags: |
             ${{ env.IMAGE_PREFIX }}-worker:latest
             ${{ env.IMAGE_PREFIX }}-worker:${{ github.ref_name }}
@@ -165,6 +166,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           build-args: |
             PLATFORM=cpu
-            HF_TOKEN=${{ secrets.HF_TOKEN }}
+          secrets: |
+            hf_token=${{ secrets.HF_TOKEN }}
           tags: |
             ${{ env.IMAGE_PREFIX }}-worker:cpu

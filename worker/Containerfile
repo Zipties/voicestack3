@@ -63,13 +63,12 @@ ENV SPEECHBRAIN_CACHE_DIR=/app/model_cache/speechbrain
 ENV MODELSCOPE_CACHE=/app/model_cache/modelscope
 ENV HF_HOME=/app/model_cache/huggingface
 
-# HF_TOKEN is a build-time secret (pass with --build-arg HF_TOKEN=hf_...).
-# Required for the gated pyannote models; diarization is skipped if omitted.
-ARG HF_TOKEN=""
-ENV HF_TOKEN=${HF_TOKEN}
-
+# Gated fallback-model downloads use a transient build secret, never ARG/ENV.
+# With no secret, public models still download and pyannote caches are skipped.
 COPY scripts/download_models.py /tmp/download_models.py
-RUN python3 /tmp/download_models.py && rm /tmp/download_models.py
+RUN --mount=type=secret,id=hf_token \
+    python3 -c "import os, pathlib, runpy; p=pathlib.Path('/run/secrets/hf_token'); os.environ.update({'HF_TOKEN':p.read_text().strip()} if p.exists() else {}); runpy.run_path('/tmp/download_models.py',run_name='__main__')" \
+    && rm /tmp/download_models.py
 
 # Switch runtime cache dirs to /data/ (persistent volume).
 # The entrypoint seeds these from the baked /app/model_cache/ on first start.
