@@ -1,0 +1,13 @@
+# Preserve the exact deployed WhisperX/emotion/embedding dependencies.
+ARG BASE_IMAGE=localhost/vs3-worker:pre-nemotron-20261013
+FROM ${BASE_IMAGE}
+USER root
+RUN python -m venv --system-site-packages /opt/nemotron \
+    && /opt/nemotron/bin/pip install --no-cache-dir \
+       'git+https://github.com/huggingface/transformers.git@d0deac8f876f3b89bf03aa513f4823e364084e8c' \
+       'numpy==2.3.5'
+COPY nemotron-model/ /app/model_cache/nemotron/
+COPY pipeline/diarization.py pipeline/nemotron_runtime.py pipeline/transcription.py pipeline/verify.py pipeline/run.py /app/pipeline/
+ENV DIARIZATION_BACKEND=nemotron
+ENV NEMOTRON_PYTHON=/opt/nemotron/bin/python
+ENV NEMOTRON_MODEL_DIR=/app/model_cache/nemotron

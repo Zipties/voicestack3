@@ -156,7 +156,7 @@ def run_pipeline(job_id: str, input_path: str):
     # Stream stdout line by line, filter noise for Redis
     _LOG_PREFIXES = ("[pipeline]", "[speakers]", "[persist]",
                      "[VRAM]", "[GPU]", "[WhisperX]", "[artifacts]",
-                     "[whisper]", "[emotion]", "[audio]")
+                     "[whisper]", "[emotion]", "[audio]", "[diarization]")
     for line in proc.stdout:
         line = line.rstrip("\n")
         if line:

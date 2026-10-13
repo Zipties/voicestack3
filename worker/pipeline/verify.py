@@ -58,39 +58,13 @@ def verify_speakers(audio_path: str, min_duration: float = 2.0,
             device = "cpu"
         print(f"[verify] Using device: {device}", flush=True)
 
-        # ── Step 1: Pyannote Diarization ──
-        hf_token = os.getenv("HF_TOKEN", "")
-        hf_offline = os.getenv("HF_HUB_OFFLINE", "0") == "1"
-        if not hf_token and not hf_offline:
-            raise RuntimeError("HF_TOKEN required for speaker diarization (pyannote)")
-
-        print("[verify] Loading pyannote diarization pipeline...", flush=True)
+        # Step 1: Shared diarization backend (same default as transcription)
         log_gpu_memory("before_diarize")
-
-        from pyannote.audio import Pipeline as PyannotePipeline
-
-        diarization_pipeline = PyannotePipeline.from_pretrained(
-            "pyannote/speaker-diarization-3.1",
-            token=hf_token or True,  # pyannote.audio 4.x renamed use_auth_token -> token
-            cache_dir=os.getenv("PYANNOTE_CACHE_DIR", "/app/model_cache/pyannote"),
-        )
-        # pyannote supports CUDA and MPS
-        diarize_device = device
-        diarization_pipeline.to(torch.device(diarize_device))
-
-        diarization = diarization_pipeline(wav_path)
-
-        raw_segments = []
-        for turn, _, speaker_label in diarization.itertracks(yield_label=True):
-            raw_segments.append({
-                "start": turn.start,
-                "end": turn.end,
-                "speaker": speaker_label,
-            })
+        from pipeline.diarization import diarize_segments
+        raw_segments = diarize_segments(audio, device=device)
 
         print(f"[verify] Diarization complete: {len(raw_segments)} segments", flush=True)
 
-        del diarization_pipeline
         cleanup_gpu()
         log_gpu_memory("after_diarize")
 

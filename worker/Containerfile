@@ -43,6 +43,16 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip3 install --no-cache-dir -r requirements.txt
 
+# Isolate the newer diarization runtime from WhisperX's Transformers dependencies.
+RUN python -m venv --system-site-packages /opt/nemotron \
+    && /opt/nemotron/bin/pip install --no-cache-dir \
+       'git+https://github.com/huggingface/transformers.git@d0deac8f876f3b89bf03aa513f4823e364084e8c' \
+       'numpy==2.3.5'
+RUN /opt/nemotron/bin/python -c "from huggingface_hub import snapshot_download; snapshot_download('nvidia/Nemotron-3-Diarization', revision='f667ed73aee57d40cc39428eb768b4fd87a0a29e', local_dir='/app/model_cache/nemotron', allow_patterns=['*.json', '*.safetensors'])"
+ENV DIARIZATION_BACKEND=nemotron
+ENV NEMOTRON_PYTHON=/opt/nemotron/bin/python
+ENV NEMOTRON_MODEL_DIR=/app/model_cache/nemotron
+
 # ── Bake ML models into the image ───────────────────────────────────────────
 # Build-time cache at /app/model_cache/ (baked into image layer).
 # At runtime, entrypoint copies these to /data/model_cache/ (persistent volume)

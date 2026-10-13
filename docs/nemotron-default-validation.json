@@ -1,0 +1,57 @@
+{
+  "job_id": "6392dabf-d398-4b2f-8706-a42ce677bd64",
+  "source_job": "a00a8584-6ec2-42ec-a0d7-4b920037c2e5",
+  "status": "COMPLETED",
+  "stages_observed": [
+    null,
+    "audio_processing",
+    "alignment",
+    "emotion_detection",
+    "generating_artifacts",
+    "completed"
+  ],
+  "segments": 20,
+  "segments_with_word_timings": 20,
+  "segments_with_speaker": 20,
+  "segments_with_emotion": 20,
+  "speaker_id_count": 3,
+  "nemotron_log_verified": true,
+  "transcript_top_level_keys": [
+    "created_at",
+    "id",
+    "job_id",
+    "language",
+    "raw_text",
+    "segments",
+    "summary",
+    "tags",
+    "title",
+    "url"
+  ],
+  "segment_keys": [
+    "emotion",
+    "emotion_confidence",
+    "end_time",
+    "id",
+    "original_speaker_label",
+    "speaker",
+    "speech_events",
+    "start_time",
+    "text",
+    "word_timings"
+  ],
+  "test_clip_seconds": 90,
+  "note": "One new validation job retained. Original job and transcript untouched.",
+  "speaker_verification_http": 200,
+  "speaker_verification_response_keys": [
+    "dialogue_detected",
+    "dialogue_summary",
+    "duration_seconds",
+    "processing_time_seconds",
+    "segments",
+    "speakers"
+  ],
+  "verification_speaker_count": 3,
+  "transcription_api_http": 200,
+  "transcription_api_nonempty": true
+}

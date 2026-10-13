@@ -113,22 +113,11 @@ def align_and_diarize(
 
     # Step 2: Speaker diarization
     if do_diarize:
-        hf_offline = os.getenv("HF_HUB_OFFLINE", "0") == "1"
-        if not hf_token and not hf_offline:
-            raise RuntimeError("HF_TOKEN required for speaker diarization (pyannote)")
-
-        print("[WhisperX] Loading diarization pipeline...", flush=True)
-        from whisperx.diarize import DiarizationPipeline
-        # whisperx 3.8.x: pyannote 4.x renamed use_auth_token -> token
-        diarize_model = DiarizationPipeline(
-            token=hf_token or True,
-            device=device,
-        )
-        diarize_segments = diarize_model(audio)
+        from pipeline.diarization import diarize_dataframe
+        diarize_segments = diarize_dataframe(audio, device=device)
         result = whisperx.assign_word_speakers(diarize_segments, result)
         print(f"[WhisperX] Diarization complete.", flush=True)
 
-        del diarize_model
         cleanup_gpu()
         log_gpu_memory("after_diarize")
     else:
@@ -243,21 +232,15 @@ def transcribe(
     cleanup_gpu()
     log_gpu_memory("after_align")
 
-    # Step 3: Speaker diarization (pyannote supports MPS)
+    # Step 3: Speaker diarization through the shared backend contract
     diarize_device = device
     if device == "cpu" and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
         diarize_device = "mps"
-    print(f"[WhisperX] Loading diarization pipeline on {diarize_device}...")
-    from whisperx.diarize import DiarizationPipeline
-    diarize_model = DiarizationPipeline(
-        token=hf_token or True,
-        device=diarize_device,
-    )
-    diarize_segments = diarize_model(audio)
+    from pipeline.diarization import diarize_dataframe
+    diarize_segments = diarize_dataframe(audio, device=diarize_device)
     result = whisperx.assign_word_speakers(diarize_segments, result)
     print(f"[WhisperX] Diarization complete.")
 
-    del diarize_model
     cleanup_gpu()
     log_gpu_memory("after_diarize")
 
